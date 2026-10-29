@@ -1,0 +1,724 @@
+# Khorasan ERP — Upgrade Existing Window & Door Design and Cost Calculation System
+
+## IMPORTANT: MODIFY THE EXISTING APPLICATION
+
+You have already generated an application for me in Google AI Studio. I am not asking you to create a new project from scratch.
+
+I want you to inspect the existing source code and substantially improve the current window and door design system, material catalog, manufacturing instructions, and cost calculation workflows.
+
+**Modify the actual application and its source files. Do not only provide recommendations, a plan, mockups, or a new design concept.**
+
+Preserve the existing framework, application structure, routing, database integration, working modules, and visual identity wherever possible. Do not replace the whole application with a simplified prototype. Do not remove existing features unless a change is necessary and justified.
+
+First inspect the existing implementation, identify the root causes of the problems below, and then implement and verify the fixes.
+
+---
+
+# 1. Fix the Existing Design Editor
+
+The current 2D and 3D design features are insufficient. Upgrade them into a practical, professional door and window designer.
+
+## 1.1 Product configuration
+
+Support the following product types:
+
+- PVC windows.
+- PVC doors.
+- Aluminum windows.
+- Aluminum doors.
+
+Provide configurable design options for:
+
+- Number of panels and sashes.
+- Fixed and operable panels.
+- Single-panel and multi-panel designs.
+- Sliding and other supported opening systems.
+- Left-hand and right-hand opening.
+- Inward and outward opening where applicable.
+- Horizontal and vertical divisions.
+- Mullions and transoms.
+- Different dimensions for individual panels.
+- Glass type, thickness, color, and glazing configuration.
+- Handles, hinges, locks, rollers, gaskets, and other accessories.
+- Frame and sash colors, which may be different.
+- Different glass colors for inner and outer panes.
+
+Users must be able to add, remove, select, and edit individual panels without recreating the entire product.
+
+Do not treat every configuration as universally manufacturable. Validate it against the selected profile system and available rules.
+
+## 1.2 Improve the 2D editor
+
+The 2D view must provide:
+
+- Accurate overall width and height.
+- Dimension lines and labels.
+- Individual panel dimensions.
+- Frame and sash outlines.
+- Mullions and transoms.
+- Glass areas.
+- Opening-direction symbols.
+- Panel selection and highlighting.
+- Zoom, pan, fit-to-screen, and reset controls.
+- Clear distinction between fixed and opening panels.
+- Immediate visual updates after changing any parameter.
+
+Allow the user to select a specific sash or panel and edit its properties in a clear properties panel.
+
+Keep dimensions in millimeters internally. Display formatted values consistently.
+
+## 1.3 Improve the 3D editor
+
+Fix the existing 3D rendering rather than substituting a static image or a generic model.
+
+The 3D model must be generated from the same design parameters as the 2D drawing.
+
+Implement or improve:
+
+- Actual frame geometry.
+- Actual sash and panel geometry.
+- Mullions and transoms.
+- Glass panels.
+- Profile depth.
+- Component-specific colors.
+- Glass tint and transparency.
+- Inner and outer glass configuration where supported.
+- Camera rotation, zoom, pan, and reset.
+- Fit-to-view functionality.
+- Responsive interaction and useful lighting.
+
+Changing dimensions, sash count, profile system, glass, or color must update the model immediately.
+
+Saving and reopening a design must reproduce the same geometry and configuration.
+
+Do not hardcode separate, unrelated models for 2D and 3D. Create or improve a shared parametric design model.
+
+---
+
+# 2. Fix the Color System and Rendering Bugs
+
+The current color selection and visual appearance are unreliable. Diagnose and fix the actual cause.
+
+Implement a consistent color and finish model for:
+
+- PVC frame.
+- PVC sash.
+- Aluminum frame.
+- Aluminum sash.
+- Individual panels where supported.
+- Inner and outer glass.
+- Handles and other visible accessories.
+- Gaskets and reinforcement where relevant.
+
+Support standard colors and configurable custom colors. The catalog should be extendable with additional finishes, including wood-effect finishes where appropriate.
+
+Requirements:
+
+1. Store a stable color or finish ID and its actual rendering properties.
+2. Do not store only a Persian color name while rendering an unrelated color.
+3. Keep selected colors consistent between the editor controls, saved design, 2D drawing, 3D model, quotation, and reopened project.
+4. Ensure transparent glass does not become opaque unexpectedly.
+5. Ensure transparent materials are rendered correctly without hiding the frame behind them.
+6. Correct material assignment, lighting, contrast, and transparency problems.
+7. Avoid colors that make component boundaries invisible.
+8. Provide a sensible fallback when a texture or rendering asset is unavailable.
+9. Test combinations of dark frames, light frames, transparent glass, tinted glass, and different sash colors.
+10. Preserve saved designs when repairing the color implementation.
+
+Do not merely change the user interface color palette. Fix the underlying rendering and material-assignment logic.
+
+---
+
+# 3. Build a Complete Profile System Catalog
+
+Add support for multiple PVC and aluminum profile systems.
+
+## PVC profile systems
+
+The application must support different series, including 6000 and 7000 series, as configurable profile systems.
+
+Do not assume that the 6000 or 7000 label alone defines all the dimensions, deductions, or fabrication rules.
+
+Each system should contain configurable data such as:
+
+- Brand.
+- Series or system name.
+- System code.
+- Profile code.
+- Profile name.
+- Profile role: frame, sash, mullion, transom, glazing bead, reinforcement, or another configurable role.
+- Cross-section dimensions or geometry.
+- Profile depth and other relevant dimensions.
+- Standard stock length.
+- Color availability.
+- Compatibility with other profiles and accessories.
+- Supplier.
+- Purchase unit.
+- Purchase price and currency.
+- Effective date and price history.
+- Applicable cutting and assembly rules.
+
+## Aluminum profile systems
+
+Support multiple aluminum brands, series, profile types, and system configurations.
+
+Do not assume all aluminum systems have identical cross-sections, stock lengths, accessories, assembly methods, or cutting deductions.
+
+Allow new aluminum systems to be registered without changing application code.
+
+## Profile selection in the designer
+
+When a user chooses a profile system, show only the relevant compatible profiles and accessories where compatibility data is available.
+
+Selecting a different profile system must update:
+
+- The design's profile configuration.
+- Applicable cross-section and geometry data.
+- Material requirements.
+- Cutting calculations.
+- Compatible hardware options.
+- Cost calculations.
+
+If a required specification or fabrication rule is missing, clearly identify it rather than silently using another system's rules.
+
+---
+
+# 4. Add a New Dashboard and Sidebar Module: Materials & Products
+
+Add a new navigation entry named:
+
+**«اجناس و مواد»**
+
+It must be accessible from the existing dashboard or sidebar and must integrate with the current application architecture.
+
+Create a complete material and product catalog where the workshop can register all goods used in its work.
+
+## Categories
+
+Support configurable categories such as:
+
+- PVC profiles.
+- Aluminum profiles.
+- Glass.
+- Handles.
+- Hinges.
+- Locks.
+- Rollers.
+- Gaskets.
+- Reinforcement.
+- Screws and fasteners.
+- Glazing beads.
+- Spacers.
+- Sealants and consumables.
+- Screens.
+- Other accessories.
+- Labor and installation services.
+- Transport and other configurable costs.
+
+The administrator must be able to create, rename, and manage categories.
+
+## Product registration form
+
+Each material or product should support appropriate fields, including:
+
+- Unique product code.
+- Product name.
+- Category.
+- Brand and model.
+- Material family.
+- Description.
+- Specifications.
+- Unit of measurement.
+- Purchase price.
+- Currency: AFN or USD.
+- Supplier.
+- Stock length, when applicable.
+- Dimensions and thickness, when applicable.
+- Color or finish options, when applicable.
+- Compatibility information, when applicable.
+- Stock quantity, if inventory is implemented.
+- Minimum stock level, if applicable.
+- Active/inactive status.
+- Notes and optional image.
+- Creation and modification timestamps.
+
+Do not force irrelevant fields onto every product. Use category-specific forms.
+
+For example, profile products need profile-system information and stock length; glass needs thickness, type, and price unit; handles need model, compatibility, and price per piece.
+
+Implement full create, read, update, archive, search, filtering, and validation workflows.
+
+Prevent accidental duplicate product codes where uniqueness is required.
+
+Maintain price history rather than overwriting historical prices without a record.
+
+---
+
+# 5. Integrate the Material Catalog with Design and Pricing
+
+This integration is mandatory.
+
+The designer must not maintain an unrelated, hardcoded list of profile prices, glass prices, or accessories.
+
+When a user calculates a product's cost, the application must read from the registered catalog and the applicable approved rules.
+
+For a selected door or window, identify the materials required by its design, including where applicable:
+
+- Frame profiles.
+- Sash profiles.
+- Mullions and transoms.
+- Glazing beads.
+- Glass.
+- Handles.
+- Hinges.
+- Locks.
+- Rollers.
+- Gaskets.
+- Reinforcement.
+- Screws and fasteners.
+- Other compatible accessories.
+- Labor.
+- Transport.
+- Installation.
+
+Allow the user to review the materials selected for that design and adjust optional items or quantities where permitted.
+
+If a required item is unavailable, offer a way to register it or select a compatible existing item.
+
+If the quantity cannot be determined without a missing fabrication rule, identify the missing rule and mark the result incomplete.
+
+Do not invent prices or quantities.
+
+---
+
+# 6. Add a Cost Calculation Panel Inside the Designer
+
+Add a clear, accessible action:
+
+**«محاسبه قیمت تمام‌شده»**
+
+This action must be available from the current door/window design workspace.
+
+When the user opens it, show a calculation panel or dialog that uses the current saved design parameters and the registered material catalog.
+
+## Calculation inputs
+
+Use the selected design and request only missing information required for the calculation, such as:
+
+- Profile brand and system.
+- Specific profile selections.
+- Glass type and thickness.
+- Single or double glazing.
+- Glass color where price differs.
+- Handle type.
+- Hinge, lock, roller, and other applicable hardware.
+- Reinforcement and accessories.
+- Labor and installation charges.
+- Transport and other configurable costs.
+- Discount or pricing strategy.
+- Currency and exchange rate, if conversion is needed.
+
+Prefill every field that is already known from the design or material catalog.
+
+Do not ask users to re-enter information already available.
+
+If there are several compatible products, present them with their names, specifications, units, and prices.
+
+Allow a user to add a missing product to the catalog without losing the current design or calculation.
+
+## Calculation results
+
+Display a clear breakdown containing:
+
+- Required materials.
+- Quantity of each material.
+- Unit of measurement.
+- Selected unit price.
+- Line total.
+- Labor and service costs.
+- Transport and other charges.
+- Total material cost.
+- Estimated manufacturing cost.
+- Optional markup or target profit margin.
+- Suggested selling price.
+- Cost and selling price per square meter where applicable.
+- Price per linear meter where applicable.
+- Final price per product.
+- Missing information and calculation warnings.
+
+Support AFN and USD, with explicit exchange rates and rounding rules.
+
+Make the pricing basis explicit. A price per square meter is not the same as a price per linear meter or a per-unit selling price.
+
+Allow the user to choose the applicable pricing method rather than assuming that every door or window should be priced in the same way.
+
+## Calculation integrity
+
+Use a deterministic calculation service. Do not let the AI model invent a result.
+
+Do not use JavaScript floating-point arithmetic carelessly for monetary calculations. Use an appropriate exact-decimal approach and explicit rounding policies.
+
+Keep these concepts separate:
+
+- Estimated cost.
+- Confirmed quotation price.
+- Actual production cost.
+- Customer invoice.
+- Amount received.
+- Outstanding balance.
+- Project profit.
+
+Changing the catalog price later must not silently change an existing confirmed quotation.
+
+Allow recalculation to create a new estimate version.
+
+If a calculation is incomplete, show which values or rules are missing and whether the displayed total is provisional. Never present an incomplete result as a verified manufacturing cost.
+
+---
+
+# 7. Add a New Dashboard and Sidebar Module: Project Calculator
+
+Add another navigation entry named:
+
+**«محاسبه پروژه»**
+
+This module is for a customer who brings a list of doors and windows and asks the workshop to calculate the cost, without necessarily requiring a complete design project or production order.
+
+The user must be able to add multiple different doors and windows to a single calculation session.
+
+## 7.1 Create a calculation session
+
+Provide fields for:
+
+- Customer name or optional customer record.
+- Project name or reference.
+- Location or notes where useful.
+- Calculation currency: AFN or USD.
+- Pricing basis.
+- Optional exchange rate.
+- Optional labor, transport, installation, and overhead.
+
+Allow a quick calculation without requiring the user to create a full customer account.
+
+## 7.2 Add multiple doors and windows
+
+Provide an action:
+
+**«افزودن درب یا پنجره»**
+
+Each line item must support its own configuration.
+
+For each item, collect the applicable information:
+
+- Product type: door or window.
+- Material family: PVC or aluminum.
+- Width and height.
+- Quantity.
+- Profile brand and system.
+- Specific profiles where known.
+- Number of sashes or panels.
+- Panel arrangement or design.
+- Opening type and direction.
+- Glass type, thickness, and color.
+- Single or double glazing.
+- Handle type.
+- Other required hardware and accessories.
+- Optional labor or installation information.
+- Notes.
+
+Use a simplified form for customers who provide only basic dimensions and product type.
+
+Reveal advanced fields when necessary rather than showing every field at once.
+
+Prefill selections from the material catalog and the most recently used configuration where appropriate, without treating defaults as verified manufacturing rules.
+
+## 7.3 Design options
+
+For each item, provide a way to:
+
+- Select a standard design template.
+- Configure panel and sash layout.
+- Open the detailed 2D/3D designer when necessary.
+- Save the current configuration.
+- Duplicate an item and modify its dimensions or quantity.
+
+Do not require every item to be drawn in the full editor if the customer only wants a preliminary estimate.
+
+However, never claim that a simplified estimate has the same engineering accuracy as a fully configured and validated manufacturing design.
+
+## 7.4 Calculate each item and the whole project
+
+Calculate each item independently using the selected catalog products and applicable rules.
+
+For each line item, show:
+
+- Dimensions.
+- Product type.
+- Profile system.
+- Glass and hardware selections.
+- Quantity.
+- Unit material cost.
+- Labor and additional costs.
+- Total estimated cost for that item.
+- Unit selling price, if configured.
+- Applicable per-square-meter or per-linear-meter price.
+- Line total for the requested quantity.
+- Missing data and warnings.
+
+At the bottom, show the project summary:
+
+- Number of product lines.
+- Total number of doors and windows.
+- Total material cost.
+- Total estimated production cost.
+- Labor and installation.
+- Transport and other costs.
+- Discount.
+- Suggested selling price.
+- Total project amount.
+- Amount per selected pricing basis.
+- Currency.
+- Missing information affecting accuracy.
+
+Recalculate the project totals whenever an item, quantity, material selection, price, or relevant cost input changes.
+
+Avoid double-counting costs. For example, a shared transport charge should not automatically be added in full to every item.
+
+## 7.5 Editing and quotation output
+
+Allow the user to:
+
+- Edit an item.
+- Duplicate an item.
+- Remove an item with confirmation.
+- Save the calculation as a draft.
+- Reopen and recalculate a draft.
+- Convert a completed calculation into a customer quotation or project, using the existing application workflows where available.
+- Print or export a professional Persian quotation.
+- Show per-item and project-wide totals in AFN or USD.
+- Record the calculation date and relevant price/rule versions.
+
+Do not issue a confirmed quotation automatically. Let the authorized user review and confirm it.
+
+---
+
+# 8. Simplify Manufacturing Drawings and Instructions
+
+The current drawing and manufacturing instruction area is confusing.
+
+Redesign it as a clear, step-by-step workflow.
+
+Separate these sections:
+
+1. Product overview.
+2. Design dimensions.
+3. Selected profile system.
+4. Component and sash list.
+5. Bill of materials.
+6. Cutting list.
+7. Glass dimensions and glazing details.
+8. Hardware and accessories.
+9. Assembly instructions.
+10. Cost breakdown.
+
+Use plain Persian labels, visual grouping, units, and clear warnings.
+
+For cutting lists, show:
+
+- Profile name and code.
+- Required cut length.
+- Quantity.
+- Cut angles where applicable.
+- Stock length.
+- Applicable cutting allowance and kerf where configured.
+- Cutting pattern or stock-bar assignment.
+- Waste and remaining material.
+- Rule or profile-system reference.
+
+For glass, show the relevant dimensions, quantity, thickness, type, and glazing configuration.
+
+Do not use vague labels or unexplained internal codes as the only information visible to the user.
+
+Do not generate manufacturing instructions from unsupported assumptions.
+
+If the necessary profile or fabrication rules are missing, display a clear message explaining what must be configured before the instruction can be confirmed for production.
+
+Provide a printable manufacturing sheet with the 2D drawing, key dimensions, selected materials, cutting list, and relevant assembly information.
+
+---
+
+# 9. User Interface and Navigation
+
+Integrate the following modules into the existing dashboard/sidebar:
+
+- Existing dashboard.
+- Existing customers and projects.
+- Existing design module, upgraded in place.
+- **اجناس و مواد**
+- **محاسبه پروژه**
+- Existing financial and reporting modules, if present.
+
+Use consistent Persian RTL navigation and professional visual design.
+
+Keep the primary workflows obvious:
+
+**Design a window → select materials → calculate its cost → review the breakdown → save or create a quotation.**
+
+And:
+
+**Open project calculator → add multiple doors/windows → configure each item → calculate line totals → review the project total → export or save the quotation.**
+
+Do not add disconnected pages that merely look functional. Every navigation item, form, button, and calculation action must work.
+
+Provide meaningful validation and error messages in Persian.
+
+Avoid unnecessary modal dialogs and excessively long forms. Use progressive disclosure, tabs, collapsible sections, and summaries where appropriate.
+
+---
+
+# 10. Data Model and Persistence
+
+Inspect the existing database or storage implementation before changing it.
+
+Extend the existing models and migrations instead of creating parallel, disconnected stores.
+
+Ensure the application can persist:
+
+- Product categories.
+- Material catalog entries.
+- Profile systems and specifications.
+- Supplier records and price history.
+- Glass specifications.
+- Hardware and accessory specifications.
+- Color and finish definitions.
+- Fabrication rules and versions.
+- Design configurations and revisions.
+- Individual panel and sash data.
+- Calculation sessions.
+- Calculation line items.
+- Selected material snapshots.
+- Cost breakdowns.
+- Quotation snapshots.
+- Calculation warnings and missing-rule information.
+
+Every saved calculation must retain enough information to explain how the result was produced.
+
+A saved calculation must not silently change when catalog prices or profile rules are updated later.
+
+Use stable identifiers and proper relationships.
+
+If the current application uses local storage, a browser database, a backend database, or a different persistence layer, adapt to the existing architecture. Do not introduce a completely new persistence system without a clear need.
+
+---
+
+# 11. Required Verification
+
+After implementation, test the actual application rather than only reviewing the code.
+
+Verify the following scenarios:
+
+### Design
+
+1. Create a PVC window.
+2. Change its dimensions.
+3. Add multiple sashes.
+4. Change the panel layout.
+5. Change frame and sash colors.
+6. Change glass type and tint.
+7. Switch between supported 2D and 3D views.
+8. Save, reopen, and verify that the configuration and colors remain correct.
+9. Select a different supported profile system and verify the relevant configuration updates.
+
+### Materials
+
+1. Create a material category.
+2. Register a PVC profile.
+3. Register an aluminum profile.
+4. Register glass and hardware.
+5. Enter prices in AFN and USD.
+6. Edit a product price and verify that old saved calculations preserve their original price snapshots.
+7. Verify search, filtering, editing, and archiving.
+
+### Design cost calculation
+
+1. Calculate a product using registered materials.
+2. Verify material quantities and line totals.
+3. Verify the project-specific pricing basis.
+4. Test missing profile rules.
+5. Test missing glass or hardware prices.
+6. Confirm that incomplete calculations are clearly labeled.
+7. Verify that saved calculations can be reopened without losing their breakdown.
+
+### Project calculator
+
+1. Create a calculation session.
+2. Add two different windows.
+3. Add a door with different dimensions and materials.
+4. Set different quantities.
+5. Verify each line total independently.
+6. Verify the combined project total.
+7. Switch the output currency using an explicit exchange rate.
+8. Edit one item and verify that totals update correctly.
+9. Save, reopen, and export the calculation.
+10. Verify that no shared cost is accidentally counted more than once.
+
+### Manufacturing instructions
+
+1. Open a supported design with configured rules.
+2. Verify that cutting and material information is understandable.
+3. Open a design with missing rules.
+4. Verify that unsupported instructions are not presented as confirmed production instructions.
+
+Fix discovered defects before marking these tasks complete.
+
+If an external dependency or missing real-world rule prevents a test, document the limitation accurately.
+
+---
+
+# 12. Implementation Rules
+
+- Inspect first, then modify.
+- Preserve existing functionality.
+- Implement real data flows, not mock-only screens.
+- Reuse existing components and services when appropriate.
+- Keep the 2D view, 3D view, materials, and calculation engine synchronized through a shared design model.
+- Keep calculations deterministic and separate from visual rendering.
+- Use exact or appropriately controlled decimal arithmetic for money.
+- Do not invent actual profile specifications, supplier prices, glass deductions, or cutting rules.
+- Do not silently substitute one profile system's rules for another.
+- Do not make unsupported manufacturing claims.
+- Do not hardcode catalog prices in UI components.
+- Do not use AI-generated values as authoritative engineering calculations.
+- Preserve historical calculations and confirmed quotations.
+- Do not replace working features with placeholders.
+- Do not claim tests passed unless they were executed.
+- Update the existing documentation and task tracking.
+- Run the available checks and resolve errors introduced by your changes.
+
+If the full scope cannot be completed in one execution, implement the highest-priority features in the order below, update the project status, and continue with the remaining tasks rather than falsely claiming completion.
+
+## Implementation priority
+
+1. Fix existing 2D/3D design synchronization and color rendering.
+2. Improve sash/panel editing and profile-system selection.
+3. Add the material catalog and integrate it with existing data.
+4. Implement the cost calculation panel inside the designer.
+5. Add the independent multi-item project calculator.
+6. Simplify and improve manufacturing instructions.
+7. Verify persistence, calculations, and quotations.
+
+## Final deliverables
+
+When finished, summarize:
+
+- Files and modules changed.
+- Bugs fixed and their root causes.
+- New navigation entries.
+- Design features implemented.
+- Material catalog capabilities.
+- Cost calculation behavior.
+- Project calculator behavior.
+- Tests actually executed and their results.
+- Remaining missing fabrication rules or dependencies.
+
+Start by inspecting the existing application, then implement these upgrades directly in the current project.

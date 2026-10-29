@@ -1,0 +1,918 @@
+# MASTER PROMPT — Build WindowWorkshop from Zero to Production-Ready Android App
+
+## 1. Your Role and Mission
+
+Act as a complete senior software engineering team consisting of:
+
+- Senior Android developer specializing in Java.
+- Software architect and database engineer.
+- 2D/3D parametric design engineer.
+- PVC and aluminum window/door fabrication software engineer.
+- Cutting optimization and materials calculation engineer.
+- Accounting and financial systems engineer.
+- UI/UX designer specializing in Persian RTL applications.
+- QA automation engineer and Android release engineer.
+
+Your mission is to **design, implement, test, and prepare a complete, usable Android application from zero to a production-ready APK** for workshops that manufacture and install PVC and aluminum doors and windows.
+
+The application name is **WindowWorkshop**. Keep the codebase maintainable, modular, documented, testable, and ready for future expansion.
+
+Do not merely explain how to build the application. Actually work on the project files, implement the features, run available commands and tests, fix errors, and continue until the application reaches the highest verifiable level of completion.
+
+Do not stop after generating a plan, database schema, UI mockup, prototype, or partially functional application.
+
+## 2. Mandatory Working Rules
+
+1. First inspect the current repository, operating environment, installed SDKs, available build tools, and existing source files.
+2. If the repository already contains code, preserve valid work and extend it. Do not overwrite functioning code without a reason.
+3. If the repository is empty, initialize a complete Android project.
+4. Create `PROJECT_STATUS.md`, `TASKS.md`, and `IMPLEMENTATION_PLAN.md` before substantial implementation.
+5. Divide the work into phases, but execute the phases autonomously in sequence. Do not stop after writing the phase plan.
+6. After each phase, run the available build, tests, and relevant checks. Fix failures before moving forward whenever possible.
+7. Keep documentation synchronized with the implementation.
+8. Never claim that a feature, test, build, or release succeeded unless you actually verified it.
+9. Never leave critical functionality as a placeholder, fake success message, decorative button, hardcoded demo result, or TODO.
+10. If a feature cannot be completed because of a missing dependency, unavailable environment, or missing business rule, implement the reliable parts, document the exact blocker, and continue with independent work.
+11. Do not ask me to approve every phase. Make reasonable engineering decisions autonomously and record them in `DECISIONS.md`.
+12. Do not invent actual supplier prices, profile dimensions, manufacturing rules, cutting allowances, hardware quantities, or glass-sizing formulas. Create configurable rule-management screens and clearly identify unverified rules.
+13. Never silently substitute estimated values for confirmed manufacturing calculations.
+14. Do not delete user data, reset a real database, expose secrets, or perform destructive repository operations without explicit authorization.
+15. Prefer stable, compatible dependencies. Verify their availability and compatibility before introducing them.
+16. If context or execution time is limited, preserve progress in project documents and continue with the next unfinished task in a subsequent execution. Do not mark unfinished tasks as complete.
+17. Use English for code identifiers and technical documentation. Use Persian for all user-facing application text.
+18. Deliver working source code, automated tests, a reproducible build process, and an APK when the environment permits it.
+
+## 3. Application Requirements
+
+### Platform and technology
+
+Build a native Android application with the following default architecture:
+
+- Language: Java.
+- UI: Android XML layouts and Material Components where compatible.
+- Database: Room over SQLite.
+- Architecture: MVVM, repository pattern, and clear separation of UI, domain logic, and data access.
+- Background operations: WorkManager when appropriate.
+- Local preferences: DataStore or another compatible Android-supported solution.
+- 2D design: Custom View/Canvas or another suitable Android-native drawing approach.
+- 3D design: Evaluate Filament or another maintained Android-compatible 3D engine. Choose a suitable implementation after verifying dependencies and device compatibility.
+- Testing: JUnit, AndroidX Test, and UI tests where practical.
+- Build system: Gradle with compatible Android Gradle Plugin and Java versions supported by the installed environment.
+
+Inspect the actual environment before selecting SDK levels or dependency versions. Do not upgrade the entire toolchain unnecessarily.
+
+The application must work offline for its core features and must not require a cloud account, paid API, or internet connection to create projects, design products, calculate supported estimates, record payments, or view reports.
+
+Do not use an online 3D viewer that makes the core design functionality unavailable offline.
+
+### Language and interface
+
+- Entire user interface in Persian.
+- Right-to-left layout throughout the application.
+- Persian labels, forms, menus, reports, validation messages, and error messages.
+- Support Persian and Arabic characters correctly.
+- Use readable typography, consistent spacing, accessible controls, and professional visual hierarchy.
+- Use appropriate Persian numeral formatting in the UI while preserving correct numeric values internally.
+- Support configurable date display and locale-aware formatting.
+- Keep the interface responsive on supported Android screen sizes.
+- Provide loading, empty, success, error, and confirmation states.
+- Support dark mode if practical without compromising the primary interface.
+
+Create a polished, practical workshop application rather than a generic administrative dashboard.
+
+## 4. User Accounts and Permissions
+
+Support multiple local users on the same workshop installation.
+
+Implement configurable roles, such as:
+
+- Workshop owner / administrator.
+- Salesperson.
+- Designer.
+- Accountant.
+- Production operator.
+- Read-only user.
+
+Permissions must be enforced in the application’s business layer, not merely by hiding buttons.
+
+Provide:
+
+- User creation and deactivation.
+- Role assignment.
+- Permission checks.
+- Session locking or sign-out.
+- Audit records for important financial, design, inventory, and configuration changes.
+- Secure handling of credentials and sensitive local data.
+
+Do not store plaintext passwords. Clearly document the limitations of local-only authentication and the security implications of shared-device access.
+
+The first release may use a single local database shared by users on the same installation. Do not falsely claim that local accounts automatically provide secure multi-device synchronization.
+
+## 5. Customers and Projects
+
+Implement complete CRUD operations, search, filtering, validation, and record details for customers and projects.
+
+### Customers
+
+Store:
+
+- Unique ID.
+- Full name or business name.
+- Phone numbers.
+- Address.
+- Notes.
+- Creation and modification timestamps.
+- Active/inactive status.
+
+### Projects
+
+Each customer can have multiple projects.
+
+Each project should support:
+
+- Unique project number.
+- Customer reference.
+- Project title and description.
+- Site address.
+- Project status.
+- Creation date and expected completion date.
+- Contract currency.
+- Notes and attachments where practical.
+- Multiple doors and windows.
+- Multiple design versions.
+- Quotations, contracts, invoices, payments, expenses, and reports.
+
+Suggested statuses include draft, measurement, design, quotation, approved, production, installation, completed, and cancelled.
+
+Maintain a reliable relationship between every project, its designs, financial records, and production records.
+
+Prevent accidental deletion of records that are referenced by confirmed financial transactions. Use archival or deactivation where appropriate.
+
+## 6. Door and Window Catalog
+
+Support PVC and aluminum products from the first release.
+
+Allow configuration of:
+
+- Product type: door or window.
+- Material family: PVC or aluminum.
+- Width and height in millimeters.
+- Frame and sash configurations.
+- Number of openings and panels.
+- Fixed and operable sections.
+- Opening direction and opening type.
+- Mullions and transoms.
+- Glass panels and glazing configurations.
+- Profile systems and cross-sections.
+- Colors and finishes.
+- Hardware and accessories.
+- Screens and other optional components.
+
+Do not assume all products use the same fabrication rules. Different profile systems, brands, series, opening types, and hardware combinations may require different rules.
+
+Build an extensible parametric product model instead of hardcoding a single window design.
+
+## 7. Interactive 2D and 3D Designer
+
+This is a core feature, not an optional future enhancement.
+
+Implement an interactive design editor with:
+
+- Accurate dimension input in millimeters.
+- A 2D technical elevation.
+- An interactive 3D view.
+- Zoom, pan, orbit, and suitable camera controls.
+- Dimension labels.
+- Frame, sash, mullion, transom, and glass geometry.
+- Configurable colors and finishes.
+- Separate inner and outer glass appearance where supported.
+- Different colors for different components.
+- Fixed and operable sections.
+- Opening direction visualization.
+- Design validation.
+- Save, reopen, duplicate, and revise designs.
+- Before-and-after version comparison where practical.
+- Customer approval status and design snapshots.
+
+### 3D rendering requirements
+
+Build actual parametric geometry for frames, sashes, panels, and glazing. Do not merely display a static image or generic cube.
+
+The 3D model must be generated from the design parameters and update when dimensions, components, or finishes change.
+
+Use realistic but efficient rendering:
+
+- Distinguishable profile and glass materials.
+- Configurable glass tint.
+- Appropriate transparency where technically supported.
+- Frame colors and finishes.
+- Useful lighting and camera controls.
+- Sensible performance on supported Android devices.
+
+If full photorealistic rendering is too expensive for the target hardware, prioritize accurate geometry, clear materials, stable interaction, and responsive performance.
+
+### Geometry and dimensions
+
+Define coordinate conventions and units explicitly.
+
+Keep the stored design model independent of the rendering engine. The same design data must be usable by the 2D renderer, 3D renderer, manufacturing calculations, and future export features.
+
+Validate dimensions, minimum and maximum supported sizes, invalid component arrangements, and impossible geometry.
+
+Do not imply that a visually plausible 3D design is automatically manufacturable.
+
+### Design versioning
+
+Every saved revision must preserve:
+
+- Design parameters.
+- Component configuration.
+- Material and finish selections.
+- Relevant rule versions.
+- Creation and modification metadata.
+- Approval state.
+
+A subsequent edit must not silently change the design associated with an already approved quotation or completed production record.
+
+## 8. Materials, Profiles, Glass, and Accessories
+
+Implement a configurable catalog for:
+
+### Profiles
+
+- Profile code and name.
+- PVC or aluminum classification.
+- Brand and profile system.
+- Section type, such as T, Z, L, or another configured type.
+- Cross-section dimensions or geometry data.
+- Standard stock length.
+- Color and finish availability.
+- Supplier.
+- Purchase unit.
+- Purchase price and currency.
+- Effective date and price history.
+- Active/inactive status.
+
+Six-meter stock lengths may be used as an initial configurable example, but they must not be hardcoded as a universal rule.
+
+### Glass
+
+Support:
+
+- Glass type.
+- Thickness.
+- Tint and color.
+- Single or double glazing.
+- Inner and outer panes.
+- Cavity width.
+- Spacer and relevant glazing components.
+- Supplier and price.
+- Units such as square meters or configured purchasing units.
+
+### Accessories
+
+Support hinges, handles, locks, rollers, gaskets, screws, reinforcement, spacers, sealants, and other configurable materials.
+
+Each item must have a suitable unit and, where applicable, compatibility rules and consumption formulas.
+
+### Suppliers and prices
+
+Implement supplier records and price history.
+
+A price record must include currency, amount, effective date, supplier where applicable, and source notes.
+
+Do not overwrite historical prices when new prices are entered.
+
+Keep units explicit and prevent invalid conversions, such as confusing meters, millimeters, square meters, pieces, and stock lengths.
+
+## 9. Manufacturing Rules and Calculation Engine
+
+Create a separate, deterministic Java domain module for engineering calculations.
+
+The calculation engine must not depend on Android UI classes, rendering code, network access, or AI output.
+
+Implement versioned, configurable fabrication rules for:
+
+- Frame profile cutting.
+- Sash profile cutting.
+- Mullions and transoms.
+- Mitre and other supported cut angles.
+- Cutting kerf.
+- End trimming.
+- Allowances and deductions.
+- Reinforcement.
+- Glass dimensions.
+- Gaskets.
+- Hardware quantities.
+- Accessories and assembly.
+- Labor and installation.
+
+These are configurable rule categories, not permission to invent their actual values.
+
+### Missing rules
+
+If a calculation requires a rule that has not been entered and approved:
+
+- Identify the missing rule.
+- Explain which calculation depends on it.
+- Mark the estimate as incomplete or provisional.
+- Do not display a provisional result as a confirmed manufacturing cost.
+- Allow the user to enter or import the missing rule.
+
+Separate verified calculations from estimates and manual overrides.
+
+### Cutting optimization
+
+Implement a cutting-plan engine that supports configurable stock lengths and applicable constraints.
+
+It should consider, when configured:
+
+- Required pieces and quantities.
+- Stock lengths.
+- Kerf.
+- End trimming.
+- Cut angles.
+- Usable stock length.
+- Compatible profile type and color.
+- Material-specific constraints.
+- Waste and leftover pieces.
+
+Calculate the number of stock bars required, cutting patterns, used length, and waste.
+
+The optimization method may use a suitable bin-packing or cutting-stock algorithm, but all constraints must be explicit and testable.
+
+Do not claim a globally optimal cutting plan unless the algorithm actually guarantees that result. Otherwise label it as a feasible or heuristic plan.
+
+Prevent incompatible profile systems from being mixed in the same cutting plan.
+
+Provide an editable, printable cutting list and record the algorithm and rule versions used.
+
+### Bill of materials
+
+Generate a bill of materials from the design and approved rules.
+
+Include profiles, glass, accessories, reinforcement, and other required materials where their consumption can be reliably calculated.
+
+Every generated quantity must have traceable provenance: a design parameter, formula, or approved rule.
+
+Manual overrides must require a reason and be auditable.
+
+## 10. Cost Estimation and Quotation
+
+Calculate estimated costs using the approved design, applicable rules, and selected price records.
+
+Support:
+
+- Profile costs.
+- Glass costs.
+- Accessories.
+- Hardware.
+- Reinforcement.
+- Consumables.
+- Labor.
+- Transport.
+- Installation.
+- Other configurable overhead.
+- Discounts.
+- Profit markup or target margin.
+- Taxes where applicable and configured.
+
+Clearly distinguish between:
+
+- Material cost.
+- Estimated production cost.
+- Actual recorded cost.
+- Quotation price.
+- Contract price.
+- Invoice amount.
+- Amount received.
+- Outstanding balance.
+- Project profit.
+
+Provide an itemized cost breakdown with quantity, unit, unit price, currency, formula/rule reference where applicable, and line total.
+
+Allow the user to configure pricing strategies without confusing markup with profit margin.
+
+Store the inputs and rule versions used for every confirmed estimate.
+
+Once a quotation or invoice is confirmed, later changes to supplier prices or manufacturing rules must not silently rewrite its historical amounts.
+
+Recalculation must create a new estimate version.
+
+## 11. Financial Management and Accounting
+
+Implement functional project-level financial management.
+
+Required features:
+
+- Quotations.
+- Contracts or order confirmations.
+- Invoices.
+- Partial payments.
+- Advance payments.
+- Receipts.
+- Expenses.
+- Supplier-related expenses.
+- Customer balances.
+- Project balances.
+- Cash accounts.
+- Payment methods.
+- Discounts.
+- Currency conversion.
+- Project profitability reports.
+
+### Payments and balances
+
+A customer may pay in installments. Each payment must be linked to the appropriate customer and, where applicable, project and invoice.
+
+Support payment allocation, partial settlement, and overpayment handling according to an explicit business policy.
+
+Do not treat an advance payment as a manufacturing expense.
+
+Calculate outstanding balances from the underlying transactions rather than relying only on manually editable totals.
+
+### Accounting integrity
+
+Use exact financial arithmetic. Do not use `float` or `double` for money calculations.
+
+Use integer minor units or `BigDecimal` with explicit currency precision and rounding policies.
+
+Prevent duplicate payments and duplicate invoice numbers where uniqueness is required.
+
+Use database transactions for operations that must succeed or fail together.
+
+Implement an audit trail for confirmed invoices, receipts, payments, expenses, and adjustments.
+
+Do not silently delete or rewrite posted financial transactions. Use controlled cancellation, reversal, or adjustment records.
+
+### Double-entry accounting
+
+Design the data model so a proper double-entry ledger can be implemented without redesigning the whole application.
+
+Implement double-entry accounting in the first release if it can be completed and tested correctly, including accounts, journal entries, debit/credit validation, and balanced postings.
+
+If any accounting function remains incomplete, document it explicitly and never present the application as a fully compliant accounting system.
+
+## 12. AFN and USD
+
+Support Afghan afghani (AFN) and US dollars (USD).
+
+Allow the workshop to select its main currency during setup and use the other currency as a secondary currency.
+
+Implement:
+
+- Configurable exchange rates.
+- Effective timestamps or dates.
+- Rate source and notes.
+- Conversion previews.
+- Historical transaction currencies.
+- Explicit rounding rules.
+- Reports in transaction currency and, where appropriate, the reporting currency.
+
+Do not silently convert a transaction using the latest rate when the transaction was originally recorded at another rate.
+
+Preserve the original amount and currency. Record the exchange rate and converted amount used for each applicable transaction.
+
+Use exact arithmetic and currency-specific precision.
+
+## 13. Actual Production and Project Profitability
+
+Provide production tracking so the workshop can compare the estimate with reality.
+
+Record actual material consumption, additional purchases, labor, installation, transport, and other project expenses.
+
+Where practical, record:
+
+- Planned material quantity.
+- Actual material quantity.
+- Planned cost.
+- Actual cost.
+- Waste.
+- Rework.
+- Production status.
+- Installation status.
+- Notes and responsible user.
+
+Calculate project profitability from actual recorded costs and recognized project revenue using clearly documented rules.
+
+Do not report advance payments as earned revenue or assume that all received money equals profit.
+
+Clearly label incomplete projects and incomplete cost records.
+
+## 14. AI Assistant
+
+Create an optional AI integration layer that can later support compatible providers.
+
+The core application must work when no AI provider is configured.
+
+Potential AI features:
+
+- Explain a cost breakdown.
+- Summarize project status.
+- Answer questions about stored workshop records.
+- Generate draft customer quotations or descriptions.
+- Identify missing data.
+- Summarize material consumption and waste.
+- Explain differences between estimates and actual results.
+- Produce natural-language summaries of reports.
+
+### AI safety and correctness
+
+The AI must not invent supplier prices, approved cutting rules, stock availability, payment records, or engineering results.
+
+Use deterministic domain services to perform calculations. The AI may explain those results but must not replace the calculation engine.
+
+Give the AI only the data required for a particular task. Use structured inputs and validate outputs.
+
+Never allow an AI response to directly post payments, issue final invoices, alter approved designs, or change confirmed prices without an explicit authorized user action.
+
+Provide a clear warning when an AI answer is an estimate, suggestion, or draft.
+
+Keep API keys out of source control. Do not embed a secret server-side API key in a distributable APK.
+
+Document the security limitations of direct client-side API integrations and design a provider interface that can later use a secure backend.
+
+## 15. Inventory and Purchasing
+
+Implement a usable initial inventory module if it can be integrated without compromising the core calculation and financial systems.
+
+Support:
+
+- Opening stock.
+- Purchases.
+- Supplier invoices.
+- Stock receipts.
+- Material issues to projects.
+- Material returns.
+- Stock adjustments with reasons.
+- Stock balances by material and unit.
+- Reorder thresholds.
+- Stock movement history.
+
+Do not deduct inventory merely because an estimate was generated.
+
+Define exactly when inventory changes, such as receiving a purchase or issuing material to production.
+
+Use transactions to prevent inconsistent stock movements.
+
+If full inventory accounting requires a later phase, complete a functional stock-movement foundation and document the remaining scope.
+
+## 16. Reports and Exports
+
+Implement reports for:
+
+- Customers and projects.
+- Quotation and contract status.
+- Material usage.
+- Cutting plans and waste.
+- Inventory.
+- Supplier prices.
+- Payments and outstanding balances.
+- Expenses.
+- Cash movements.
+- Estimated versus actual cost.
+- Project profitability.
+- Monthly summaries.
+
+Provide Persian-friendly formatting and date filters.
+
+Implement PDF and CSV export where feasible, using suitable maintained libraries.
+
+Use a clear print layout for quotations, invoices, receipts, and cutting lists.
+
+Make it possible to save or share exported documents through standard Android mechanisms.
+
+Do not claim spreadsheet export support unless an actual valid spreadsheet file is generated and tested.
+
+## 17. Database Design and Migrations
+
+Create a normalized, maintainable Room database with foreign keys, indexes, appropriate constraints, and explicit migration paths.
+
+Include entities or equivalent models for:
+
+- Customers.
+- Projects.
+- Project items.
+- Designs and design revisions.
+- Design components.
+- Glazing specifications.
+- Finishes.
+- Materials.
+- Profile specifications.
+- Glass specifications.
+- Accessories.
+- Suppliers.
+- Historical material prices.
+- Fabrication rules and versions.
+- Cutting plans and pieces.
+- Bills of materials.
+- Cost estimates and estimate lines.
+- Quotations and quotation lines.
+- Invoices and invoice lines.
+- Payments and receipts.
+- Expenses.
+- Currency rates.
+- Cash accounts and movements.
+- Users, roles, and permissions.
+- Audit logs.
+- Application settings.
+- Inventory and stock movements where implemented.
+- Synchronization metadata for future use.
+
+Adjust the final schema as necessary to ensure referential integrity and avoid unnecessary duplication.
+
+Requirements:
+
+- Stable identifiers.
+- Creation and modification timestamps.
+- Explicit currency and unit fields.
+- Historical records where needed.
+- Safe database migrations.
+- Seed data clearly marked as sample data.
+- No fabricated production prices or approved fabrication rules.
+
+Create `DATABASE.md` documenting entities, relationships, constraints, and migration strategy.
+
+## 18. Offline-First and Future Synchronization
+
+All core operations must persist locally and function offline.
+
+The first release does not need a complete cloud server or multi-device synchronization, but its architecture must be prepared for future synchronization.
+
+Include:
+
+- Stable record IDs.
+- Creation and modification timestamps.
+- Record revisions where useful.
+- Soft deletion or tombstones where appropriate.
+- A local change/outbox abstraction where useful.
+- Clear repository boundaries.
+- Conflict-handling design documentation.
+
+Do not implement fake synchronization that simply reports success.
+
+Do not expose a sync button unless a genuine synchronization operation exists.
+
+Document how a future Spring Boot backend and central database could synchronize records safely across workshop devices.
+
+## 19. Backup and Restore
+
+Implement local backup and restore.
+
+Requirements:
+
+- Export the database and required application data.
+- Include schema version and backup metadata.
+- Validate a backup before restoring it.
+- Warn the user before replacing existing data.
+- Protect against partial or corrupt restores.
+- Document whether exported backups contain sensitive information.
+- Verify that restored projects, designs, prices, payments, and financial relationships remain consistent.
+
+Use Android-supported file selection and storage APIs.
+
+Test backup and restore using representative data.
+
+## 20. Validation, Error Handling, and Auditability
+
+Create reusable validation and error-handling mechanisms.
+
+Validate:
+
+- Dimensions and geometry.
+- Required fields.
+- Currency and amount values.
+- Units.
+- Duplicate identifiers and invoice numbers.
+- Material compatibility.
+- Cutting rules.
+- Financial transaction states.
+- Permissions.
+- Database relationships.
+
+Provide understandable Persian error messages.
+
+Do not silently ignore exceptions or return fake success values.
+
+Log technical errors without exposing passwords, API keys, or unnecessary personal information.
+
+Maintain audit records for critical operations.
+
+## 21. Testing Strategy
+
+Write meaningful automated tests throughout development.
+
+### Unit tests
+
+Test:
+
+- Currency arithmetic and rounding.
+- Exchange-rate conversions.
+- Payment allocations and balances.
+- Discounts, markup, and margin calculations.
+- Cost-estimate versioning.
+- Unit conversions.
+- Profile length calculations.
+- Cutting kerf and stock utilization.
+- Cutting-plan constraints.
+- Glass calculations using approved rules.
+- Rule-version selection.
+- Missing-rule behavior.
+- Permission enforcement.
+- Inventory movements and reversals.
+
+### Database tests
+
+Test:
+
+- Foreign-key integrity.
+- Unique constraints.
+- Database transactions.
+- Room migrations.
+- Historical price preservation.
+- Design version preservation.
+- Payment and invoice relationships.
+- Backup and restore.
+
+### UI and integration tests
+
+Test the primary user journeys:
+
+1. Create a customer.
+2. Create a project.
+3. Design a PVC window.
+4. Change its dimensions and colors.
+5. Save and reopen the design.
+6. View the 2D and 3D representations.
+7. Configure the required profile and fabrication rules.
+8. Generate a bill of materials.
+9. Generate a cutting plan.
+10. Calculate a quotation.
+11. Approve a quotation.
+12. Create an invoice.
+13. Record a partial payment.
+14. Generate a receipt.
+15. Record actual project expenses.
+16. Review the outstanding balance and profitability.
+17. Export a report.
+18. Back up and restore the data.
+
+Use realistic test fixtures, but clearly mark them as test data.
+
+Do not fabricate expected engineering results. Derive expected results from documented formulas or independently verified examples.
+
+If hardware or a suitable Android emulator is unavailable, report which tests could not be executed and why.
+
+## 22. Required Documentation
+
+Maintain these files in the repository:
+
+- `README.md` — setup, features, screenshots when available, and build instructions.
+- `PROJECT_STATUS.md` — current implementation status and verified results.
+- `TASKS.md` — actionable tasks with completion status.
+- `IMPLEMENTATION_PLAN.md` — phases and dependencies.
+- `REQUIREMENTS.md` — functional and non-functional requirements.
+- `ARCHITECTURE.md` — modules, data flow, and architectural decisions.
+- `DATABASE.md` — schema and relationships.
+- `DESIGN_ENGINE.md` — parametric design model and rendering architecture.
+- `CALCULATION_RULES.md` — formulas, rule requirements, and unknowns.
+- `FINANCIAL_RULES.md` — accounting, currency, rounding, and transaction behavior.
+- `SYNC_PROTOCOL.md` — future synchronization design.
+- `TEST_PLAN.md` — test cases and results.
+- `DECISIONS.md` — important engineering decisions and reasons.
+- `RELEASE_NOTES.md` — changes in each release.
+
+Never mark a requirement as complete merely because its screen or database table exists. Completion requires working behavior and appropriate verification.
+
+## 23. Implementation Phases — Execute All of Them
+
+### Phase 1: Inspect and initialize
+
+Inspect the repository and environment.
+
+Set up the Android project, dependencies, package structure, build configuration, documentation, and automated test framework.
+
+Create the basic Persian RTL application shell.
+
+Run the initial build and tests.
+
+### Phase 2: Core data and navigation
+
+Implement navigation, Room, migrations, settings, repositories, error handling, and the customer/project workflows.
+
+Verify persistence after application restarts.
+
+### Phase 3: Users and material catalog
+
+Implement local users, permissions, audit foundations, suppliers, profiles, glass, accessories, finishes, units, prices, and price history.
+
+Create functional forms and validation.
+
+### Phase 4: Parametric design
+
+Implement the design data model, component hierarchy, 2D editor, design validation, persistence, and revision history.
+
+Implement genuine parametric 3D geometry and interaction using the selected engine.
+
+Verify that dimensions and components correspond to the stored design model.
+
+### Phase 5: Engineering calculation engine
+
+Implement versioned rules, bill of materials, cutting plans, cost calculations, traceability, and tests.
+
+Support incomplete estimates when rules are missing, without presenting them as confirmed.
+
+### Phase 6: Quotations and finance
+
+Implement quotation management, invoices, payments, receipts, expenses, balances, AFN/USD, exchange rates, and historical financial integrity.
+
+Implement double-entry accounting if it can be completed correctly.
+
+### Phase 7: Inventory, production, and reports
+
+Implement stock movements, project production tracking, actual costs, profitability, reports, and exports.
+
+### Phase 8: AI integration
+
+Implement the optional AI provider abstraction and safe, validated access to relevant application data.
+
+The core application must remain fully usable without AI configuration.
+
+### Phase 9: Backup, reliability, and UI polish
+
+Implement backup and restore, error handling, permission enforcement, migration testing, accessibility improvements, and final Persian RTL polish.
+
+### Phase 10: Release preparation
+
+Run all available tests and the release build.
+
+Fix compilation errors, failing tests, crashes, broken navigation, data-integrity issues, and critical usability problems.
+
+Inspect the generated APK and verify the actual output file.
+
+Provide reproducible build instructions and document any remaining limitations.
+
+## 24. Definition of Done
+
+The application is not complete merely because it compiles.
+
+The release candidate must satisfy the following:
+
+- It launches successfully.
+- Core screens have working navigation.
+- Customers and projects can be created, edited, searched, and reopened.
+- Designs persist correctly across application restarts.
+- The 2D and 3D views use the same saved design data.
+- PVC and aluminum product types are supported.
+- Profile, glass, accessory, finish, supplier, and price catalogs are functional.
+- Missing fabrication rules are detected and reported.
+- Supported calculations are deterministic and covered by tests.
+- Cutting plans disclose the applicable rules and constraints.
+- Financial amounts are calculated accurately and historical transactions remain consistent.
+- Partial payments and outstanding balances work correctly.
+- Offline operations work.
+- Backup and restore have been tested.
+- Critical permission checks are enforced.
+- The application provides meaningful Persian error messages.
+- No critical workflow relies on a fake success response.
+- The release build and generated APK are verified when the environment supports them.
+- Documentation accurately describes what is complete, incomplete, or unverified.
+
+If any criterion cannot be met, list it explicitly and explain the blocker. Do not falsely declare full completion.
+
+## 25. Final Execution Instructions
+
+Start now.
+
+First inspect the repository and environment, then create or update the project documentation and task list.
+
+Next, implement Phase 1 and continue through every phase in sequence without waiting for me to approve each step.
+
+Work directly on the source files. Run the relevant commands, inspect their output, fix errors, and test the application as you progress.
+
+Prefer a complete, tested implementation over many superficial screens. However, do not indefinitely postpone independent features just because another feature is blocked by missing manufacturing data.
+
+When real workshop information is missing, build the configuration mechanism and validation around it, and clearly identify the missing information.
+
+Do not replace engineering logic with hardcoded demo values. Do not fabricate test results. Do not mark unfinished work as completed.
+
+If a tool, dependency, device, or execution limit prevents further progress, preserve all completed work, update the status documents, and identify the precise next action.
+
+### Final deliverables
+
+When the work is finished, provide:
+
+1. The complete Android source code.
+2. The final project structure.
+3. A working debug APK and a release APK when the environment allows both to be built.
+4. Build and installation instructions.
+5. A summary of implemented features.
+6. Test results based on commands actually executed.
+7. Known limitations and missing workshop-specific rules.
+8. Instructions for entering real profile specifications, supplier prices, cutting rules, and currency rates.
+9. A list of the remaining tasks, if any.
+10. The exact output paths of generated APKs and other deliverables.
+
+Your objective is not to produce a convincing demonstration. Your objective is to build a reliable application that a real door and window workshop can progressively configure, test, and use in daily operations.
+
+Begin by inspecting the project now, and then execute the work.

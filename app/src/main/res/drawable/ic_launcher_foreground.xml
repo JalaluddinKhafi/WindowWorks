@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer window frame: centered in 108dp canvas, size 60x60 (x=24 to 84, y=24 to 84) -->
+    <!-- Frame outer border -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M24,24 h60 v60 h-60 z M29,29 v50 h50 v-50 z" />
+    <!-- Mullion / Center divider (T-profile) -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M51.5,29 h5 v50 h-5 z" />
+    <!-- Left Glass Pane (cyan tinted with reflection) -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M29,29 h22.5 v50 h-22.5 z" />
+    <!-- Left glass highlight -->
+    <path
+        android:fillColor="#7DD3FC"
+        android:pathData="M31,31 h18.5 v8 h-18.5 z" />
+    <!-- Right Glass Pane (operable sash frame inside) -->
+    <path
+        android:fillColor="#E2E8F0"
+        android:pathData="M56.5,29 h22.5 v50 h-22.5 z M59.5,32 v44 h16.5 v-44 z" />
+    <path
+        android:fillColor="#0284C7"
+        android:pathData="M59.5,32 h16.5 v44 h-16.5 z" />
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M61,34 h13.5 v8 h-13.5 z" />
+    <!-- Casement handle on right sash -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M58,51 h3 v6 h-3 z M58,54 h-3 v6 h2 v-4 h1 z" />
+    <!-- Elevation dimension line tick at bottom -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M24,88 h60 v2 h-60 z M24,86 h2 v6 h-2 z M82,86 h2 v6 h-2 z" />
+</vector>

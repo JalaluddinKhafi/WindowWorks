@@ -1,0 +1,6 @@
+{
+  "name": "WindowWorkshop",
+  "description": "نرم‌افزار جامع مدیریت کارگاه، طراحی پارامتریک دو‌بعدی و سه‌بعدی، بهینه‌سازی برش و حسابداری پنجره و درب دوجداره UPVC و آلومینیوم",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
