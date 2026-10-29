@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -14,14 +15,69 @@ interface AppDao {
   @Query("SELECT * FROM users WHERE isActive = 1")
   fun getAllUsers(): Flow<List<UserEntity>>
 
+  @Query("SELECT * FROM users ORDER BY role, username")
+  fun getAllUsersIncludingInactive(): Flow<List<UserEntity>>
+
   @Query("SELECT * FROM users WHERE username = :username LIMIT 1")
   suspend fun getUserByUsername(username: String): UserEntity?
+
+  @Query("SELECT COUNT(*) FROM users")
+  suspend fun countUsers(): Int
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertUser(user: UserEntity)
 
   @Update
   suspend fun updateUser(user: UserEntity)
+
+  @Query("DELETE FROM users WHERE id = :id")
+  suspend fun deleteUser(id: String)
+
+  /** Returns every row of the given table as JSON, used by the backup exporter. */
+  @Query("SELECT * FROM users")
+  suspend fun selectAllUsers(): List<UserEntity>
+
+  @Query("SELECT * FROM customers")
+  suspend fun selectAllCustomers(): List<CustomerEntity>
+
+  @Query("SELECT * FROM projects")
+  suspend fun selectAllProjects(): List<ProjectEntity>
+
+  @Query("SELECT * FROM project_items")
+  suspend fun selectAllProjectItems(): List<ProjectItemEntity>
+
+  @Query("SELECT * FROM designs")
+  suspend fun selectAllDesigns(): List<DesignEntity>
+
+  @Query("SELECT * FROM profiles")
+  suspend fun selectAllProfiles(): List<ProfileEntity>
+
+  @Query("SELECT * FROM glasses")
+  suspend fun selectAllGlasses(): List<GlassEntity>
+
+  @Query("SELECT * FROM accessories")
+  suspend fun selectAllAccessories(): List<AccessoryEntity>
+
+  @Query("SELECT * FROM invoices")
+  suspend fun selectAllInvoices(): List<InvoiceEntity>
+
+  @Query("SELECT * FROM payments")
+  suspend fun selectAllPayments(): List<PaymentEntity>
+
+  @Query("SELECT * FROM expenses")
+  suspend fun selectAllExpenses(): List<ExpenseEntity>
+
+  @Query("SELECT * FROM inventory_movements")
+  suspend fun selectAllInventoryMovements(): List<InventoryMovementEntity>
+
+  @Query("SELECT * FROM app_settings")
+  suspend fun selectAllSettings(): List<SettingEntity>
+
+  @Query("SELECT * FROM material_products")
+  suspend fun selectAllMaterialProducts(): List<MaterialProductEntity>
+
+  @Query("SELECT * FROM project_calculation_sessions")
+  suspend fun selectAllCalculationSessions(): List<ProjectCalculationSessionEntity>
 
   // AUDIT
   @Insert
@@ -33,6 +89,9 @@ interface AppDao {
   // CUSTOMERS
   @Query("SELECT * FROM customers WHERE isActive = 1 ORDER BY createdAt DESC")
   fun getAllCustomers(): Flow<List<CustomerEntity>>
+
+  @Query("SELECT * FROM customers ORDER BY fullName")
+  fun getAllCustomersIncludingInactive(): Flow<List<CustomerEntity>>
 
   @Query("SELECT * FROM customers WHERE id = :id LIMIT 1")
   suspend fun getCustomerById(id: String): CustomerEntity?
@@ -65,6 +124,9 @@ interface AppDao {
   @Query("DELETE FROM projects WHERE id = :id")
   suspend fun deleteProject(id: String)
 
+  @Query("DELETE FROM project_items WHERE projectId = :projectId")
+  suspend fun deleteItemsByProject(projectId: String)
+
   // PROJECT ITEMS
   @Query("SELECT * FROM project_items WHERE projectId = :projectId")
   fun getItemsByProject(projectId: String): Flow<List<ProjectItemEntity>>
@@ -84,6 +146,9 @@ interface AppDao {
 
   @Update
   suspend fun updateDesign(design: DesignEntity)
+
+  @Query("DELETE FROM designs WHERE id = :id")
+  suspend fun deleteDesign(id: String)
 
   // CATALOG: PROFILES
   @Query("SELECT * FROM profiles WHERE isActive = 1 ORDER BY brandSystem, name")
@@ -178,6 +243,9 @@ interface AppDao {
   @Query("DELETE FROM material_products WHERE id = :id")
   suspend fun deleteMaterialProduct(id: String)
 
+  @Query("UPDATE material_products SET stockQty = :newQty WHERE id = :id")
+  suspend fun updateProductStock(id: String, newQty: String)
+
   // PROJECT CALCULATION SESSIONS (محاسبه پروژه)
   @Query("SELECT * FROM project_calculation_sessions ORDER BY createdAt DESC")
   fun getAllCalculationSessions(): Flow<List<ProjectCalculationSessionEntity>>
@@ -193,4 +261,78 @@ interface AppDao {
 
   @Query("DELETE FROM project_calculation_sessions WHERE id = :id")
   suspend fun deleteCalculationSession(id: String)
+
+
+
+  /** Empties every business table (used before restoring a backup). */
+  @Query("DELETE FROM users") suspend fun clearUsers()
+  @Query("DELETE FROM customers") suspend fun clearCustomers()
+  @Query("DELETE FROM projects") suspend fun clearProjects()
+  @Query("DELETE FROM project_items") suspend fun clearProjectItems()
+  @Query("DELETE FROM designs") suspend fun clearDesigns()
+  @Query("DELETE FROM profiles") suspend fun clearProfiles()
+  @Query("DELETE FROM glasses") suspend fun clearGlasses()
+  @Query("DELETE FROM accessories") suspend fun clearAccessories()
+  @Query("DELETE FROM invoices") suspend fun clearInvoices()
+  @Query("DELETE FROM payments") suspend fun clearPayments()
+  @Query("DELETE FROM expenses") suspend fun clearExpenses()
+  @Query("DELETE FROM inventory_movements") suspend fun clearInventoryMovements()
+  @Query("DELETE FROM material_products") suspend fun clearMaterialProducts()
+  @Query("DELETE FROM project_calculation_sessions") suspend fun clearCalculationSessions()
+  @Query("DELETE FROM app_settings") suspend fun clearSettings()
+  @Query("DELETE FROM audit_logs") suspend fun clearAuditLogs()
+
+
+
+  @Transaction
+  suspend fun resetAllData() {
+    // Child tables first so foreign keys (if enabled later) never block the wipe.
+    clearProjectItems()
+    clearInvoices()
+    clearPayments()
+    clearExpenses()
+    clearInventoryMovements()
+    clearDesigns()
+    clearProjects()
+    clearCustomers()
+    clearCalculationSessions()
+    clearMaterialProducts()
+    clearProfiles()
+    clearGlasses()
+    clearAccessories()
+    clearSettings()
+    clearUsers()
+    clearAuditLogs()
+  }
+
+  /**
+   * Runs a full wipe + re-import in one transaction so a failed restore can never leave the
+   * database half-emptied (either the backup is applied completely, or nothing changes).
+   */
+  @Transaction
+  suspend fun replaceAllData(block: suspend () -> Unit) {
+    resetAllData()
+    block()
+  }
+
+  /** Inserts any missing default setting without touching existing values. */
+  suspend fun ensureSettings() {
+    val existing = selectAllSettings().map { it.key }.toSet()
+    com.example.core.AppSettings.DEFAULTS.forEach { (key, value) ->
+      if (key !in existing) setSetting(SettingEntity(key, value))
+    }
+  }
+
+  @Query("DELETE FROM expenses WHERE id = :id")
+  suspend fun deleteExpense(id: String)
+
+  @Query("DELETE FROM payments WHERE id = :id")
+  suspend fun deletePayment(id: String)
+
+
+
+  @Query("SELECT * FROM payments WHERE id = :id LIMIT 1")
+  suspend fun getPaymentById(id: String): PaymentEntity?
+
+
 }
