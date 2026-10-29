@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import com.example.core.AppSettings
+import com.example.core.UserRole
 import com.example.data.repository.WorkshopRepository
 import com.example.domain.model.*
 import com.example.ui.screens.*
@@ -38,14 +40,38 @@ enum class Screen(val titlePersian: String, val icon: ImageVector) {
 fun MainApp(repository: WorkshopRepository) {
   val scope = rememberCoroutineScope()
 
-  // State flows from Room
+  // -------------------------------------------------------------------------------------------
+  // Data flows from Room
+  // -------------------------------------------------------------------------------------------
   val projects by repository.getAllProjects().collectAsState(initial = emptyList())
   val customers by repository.getAllCustomers().collectAsState(initial = emptyList())
   val profiles by repository.getAllProfiles().collectAsState(initial = emptyList())
   val glasses by repository.getAllGlasses().collectAsState(initial = emptyList())
   val accessories by repository.getAllAccessories().collectAsState(initial = emptyList())
   val materialProducts by repository.getAllMaterialProducts().collectAsState(initial = emptyList())
+  val allInvoices by repository.getAllInvoices().collectAsState(initial = emptyList())
+  val allPayments by repository.getAllPayments().collectAsState(initial = emptyList())
+  val allExpenses by repository.getAllExpenses().collectAsState(initial = emptyList())
+  val inventoryMovements by repository.getInventoryMovements().collectAsState(initial = emptyList())
+  val users by repository.getAllUsers().collectAsState(initial = emptyList())
+  val auditLogs by repository.getRecentAuditLogs().collectAsState(initial = emptyList())
+  val settings by repository.getSettings().collectAsState(initial = AppSettings())
 
+  // A brand new installation has exactly one user and nobody has changed the bootstrap password.
+  val isFirstRun = users.size <= 1 && !repository.isSignedIn
+
+  // -------------------------------------------------------------------------------------------
+  // Session state mirrors the repository session (see the `sessionState` collector below).
+  // -------------------------------------------------------------------------------------------
+  var isSignedIn by remember { mutableStateOf(repository.isSignedIn) }
+  var currentRole by remember { mutableStateOf(repository.currentRole) }
+  var currentFullName by remember { mutableStateOf(repository.currentFullName) }
+  var mustChangePassword by remember { mutableStateOf(repository.mustChangePassword) }
+  var sessionUserId by remember { mutableStateOf(repository.currentUserId) }
+  var showChangePasswordDialog by remember { mutableStateOf(false) }
+  var accessDeniedMessage by remember { mutableStateOf<String?>(null) }
+
+  // Navigation state
   var currentScreen by remember { mutableStateOf(Screen.DASHBOARD) }
   var selectedProjectId by remember { mutableStateOf<String?>(null) }
 
@@ -71,19 +97,67 @@ fun MainApp(repository: WorkshopRepository) {
 
   // Selected project items & finances
   val selectedProject = projects.find { it.id == selectedProjectId }
-  val projectItems by if (selectedProjectId != null) {
-    repository.getProjectItems(selectedProjectId!!).collectAsState(initial = emptyList())
-  } else remember { mutableStateOf(emptyList()) }
+  val projectItems by remember(selectedProjectId) {
+    val id = selectedProjectId
+    if (id != null) repository.getProjectItems(id)
+    else kotlinx.coroutines.flow.flowOf(emptyList<ProjectItemModel>())
+  }.collectAsState(initial = emptyList())
 
-  val projectInvoices by if (selectedProjectId != null) {
-    repository.getInvoicesByProject(selectedProjectId!!).collectAsState(initial = emptyList())
-  } else remember { mutableStateOf(emptyList()) }
+  // Restore the previous session after an app restart, then keep Compose mirrors in sync with the
+  // repository session (login, logout, role change, backup restore, ...).
+  LaunchedEffect(true) {
+    if (!repository.isSignedIn) repository.restoreSession()
+    repository.sessionState.collect {
+      isSignedIn = repository.isSignedIn
+      currentRole = repository.currentRole
+      currentFullName = repository.currentFullName
+      mustChangePassword = repository.mustChangePassword
+      sessionUserId = repository.currentUserId
+    }
+  }
 
-  val projectPayments by if (selectedProjectId != null) {
-    repository.getPaymentsByProject(selectedProjectId!!).collectAsState(initial = emptyList())
-  } else remember { mutableStateOf(emptyList()) }
 
-  // BackHandler to handle system and navigation back gesture
+
+  if (!isSignedIn) {
+    LoginScreen(
+      workshopName = settings.workshopName,
+      isFirstRun = isFirstRun,
+      onLogin = { username, password ->
+        val error = repository.login(username, password)
+        if (error == null) {
+          isSignedIn = true
+          currentRole = repository.currentRole
+          currentFullName = repository.currentFullName
+          mustChangePassword = repository.mustChangePassword
+          currentScreen = Screen.DASHBOARD
+        }
+        error
+      }
+    )
+    return
+  }
+
+  val can = remember(currentRole) {
+    ScreenPermissions(
+      canManageProjects = currentRole.canManageProjects(),
+      canDesign = currentRole.canDesignWindows(),
+      canCreateInvoices = currentRole.canCreateInvoices(),
+      canRecordPayments = currentRole.canRecordPayments(),
+      canEditCatalog = currentRole.canEditCatalogAndPrices(),
+      canManageInventory = currentRole.canManageInventory(),
+      canManageUsers = currentRole.canManageUsers(),
+      canBackup = currentRole.canExportOrBackup()
+    )
+  }
+
+  fun navigate(target: Screen) {
+    if (isScreenAllowed(target, can)) {
+      currentScreen = target
+    } else {
+      accessDeniedMessage = target.titlePersian
+    }
+  }
+
   BackHandler(enabled = currentScreen != Screen.DASHBOARD) {
     currentScreen = when (currentScreen) {
       Screen.PROJECT_DETAIL -> Screen.PROJECTS
@@ -94,6 +168,37 @@ fun MainApp(repository: WorkshopRepository) {
     }
   }
 
+  if (mustChangePassword) {
+    ChangePasswordDialog(
+      forceChange = true,
+      onChangePassword = { old, new -> repository.changePassword(old, new) },
+      onDismiss = {},
+      onLogout = { scope.launch { repository.logout() } }
+    )
+  } else if (showChangePasswordDialog) {
+    ChangePasswordDialog(
+      forceChange = false,
+      onChangePassword = { old, new -> repository.changePassword(old, new) },
+      onDismiss = { showChangePasswordDialog = false },
+      onLogout = null
+    )
+  }
+
+  accessDeniedMessage?.let { screenTitle ->
+    AlertDialog(
+      onDismissRequest = { accessDeniedMessage = null },
+      title = { Text("عدم دسترسی") },
+      text = {
+        Text(
+          "نقش «${currentRole.titlePersian}» اجازه دسترسی به بخش «$screenTitle» را ندارد."
+        )
+      },
+      confirmButton = {
+        TextButton(onClick = { accessDeniedMessage = null }) { Text("متوجه شدم") }
+      }
+    )
+  }
+
   // Force Right-to-Left (RTL) Layout for Persian UI
   CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
     Scaffold(
@@ -101,25 +206,48 @@ fun MainApp(repository: WorkshopRepository) {
         if (currentScreen in listOf(Screen.DASHBOARD, Screen.PROJECTS, Screen.FINANCE, Screen.CUSTOMERS, Screen.MORE)) {
           TopAppBar(
             title = {
-              Text(
-                text = currentScreen.titlePersian,
-                style = MaterialTheme.typography.titleMedium
-              )
+              Column {
+                Text(
+                  text = currentScreen.titlePersian,
+                  style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                  text = "${currentFullName} • ${currentRole.titlePersian}",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
             },
             actions = {
-              IconButton(onClick = { currentScreen = Screen.PROJECT_CALCULATOR }) {
-                Icon(Icons.Default.Calculate, contentDescription = "محاسبه پروژه")
+              if (can.canCreateInvoices) {
+                IconButton(onClick = { navigate(Screen.PROJECT_CALCULATOR) }) {
+                  Icon(Icons.Default.Calculate, contentDescription = "محاسبه پروژه")
+                }
               }
-              IconButton(onClick = { currentScreen = Screen.MATERIALS_CATALOG }) {
-                Icon(Icons.Default.Category, contentDescription = "اجناس و مواد")
-              }
-              if (currentScreen == Screen.MORE) {
-                IconButton(onClick = { currentScreen = Screen.CATALOG }) {
+              if (can.canEditCatalog) {
+                IconButton(onClick = { navigate(Screen.MATERIALS_CATALOG) }) {
+                  Icon(Icons.Default.Category, contentDescription = "اجناس و مواد")
+                }
+                IconButton(onClick = { navigate(Screen.CATALOG) }) {
                   Icon(Icons.Default.MenuBook, contentDescription = "کاتالوگ")
                 }
-                IconButton(onClick = { currentScreen = Screen.INVENTORY }) {
+              }
+              if (can.canManageInventory) {
+                IconButton(onClick = { navigate(Screen.INVENTORY) }) {
                   Icon(Icons.Default.Inventory2, contentDescription = "انبار")
                 }
+              }
+              IconButton(onClick = { showChangePasswordDialog = true }) {
+                Icon(Icons.Default.Key, contentDescription = "تغییر رمز عبور")
+              }
+              IconButton(
+                onClick = {
+                  scope.launch { repository.logout() }
+                  currentScreen = Screen.DASHBOARD
+                  selectedProjectId = null
+                }
+              ) {
+                Icon(Icons.Default.Logout, contentDescription = "خروج از حساب")
               }
             }
           )
@@ -127,14 +255,16 @@ fun MainApp(repository: WorkshopRepository) {
       },
       bottomBar = {
         NavigationBar {
-          val navItems = listOf(
+          val navItems = mutableListOf(
             Screen.DASHBOARD,
             Screen.PROJECTS,
             Screen.DESIGNER,
-            Screen.PROJECT_CALCULATOR,
             Screen.FINANCE,
-            Screen.MORE
+            Screen.CUSTOMERS
           )
+          if (can.canCreateInvoices) navItems.add(2, Screen.PROJECT_CALCULATOR)
+          navItems.add(Screen.MORE)
+
           navItems.forEach { screen ->
             val isSelected = currentScreen == screen ||
                 (screen == Screen.PROJECTS && currentScreen == Screen.PROJECT_DETAIL) ||
@@ -143,7 +273,7 @@ fun MainApp(repository: WorkshopRepository) {
 
             NavigationBarItem(
               selected = isSelected,
-              onClick = { currentScreen = screen },
+              onClick = { navigate(screen) },
               icon = { Icon(screen.icon, contentDescription = screen.titlePersian) },
               label = { Text(screen.titlePersian, style = MaterialTheme.typography.labelSmall) }
             )
@@ -160,13 +290,13 @@ fun MainApp(repository: WorkshopRepository) {
           Screen.DASHBOARD -> {
             DashboardScreen(
               projects = projects,
-              onNavigateToProjects = { currentScreen = Screen.PROJECTS },
-              onNavigateToCustomers = { currentScreen = Screen.CUSTOMERS },
-              onNavigateToDesigner = { currentScreen = Screen.DESIGNER },
-              onNavigateToCutting = { currentScreen = Screen.CUTTING_PLAN },
-              onNavigateToFinance = { currentScreen = Screen.FINANCE },
-              onNavigateToProjectCalculator = { currentScreen = Screen.PROJECT_CALCULATOR },
-              onNavigateToMaterialsCatalog = { currentScreen = Screen.MATERIALS_CATALOG },
+              onNavigateToProjects = { navigate(Screen.PROJECTS) },
+              onNavigateToCustomers = { navigate(Screen.CUSTOMERS) },
+              onNavigateToDesigner = { navigate(Screen.DESIGNER) },
+              onNavigateToCutting = { navigate(Screen.CUTTING_PLAN) },
+              onNavigateToFinance = { navigate(Screen.FINANCE) },
+              onNavigateToProjectCalculator = { navigate(Screen.PROJECT_CALCULATOR) },
+              onNavigateToMaterialsCatalog = { navigate(Screen.MATERIALS_CATALOG) },
               onSelectProject = { projId ->
                 selectedProjectId = projId
                 currentScreen = Screen.PROJECT_DETAIL
@@ -202,19 +332,27 @@ fun MainApp(repository: WorkshopRepository) {
                   scope.launch { repository.saveProjectItem(newItem) }
                 },
                 onOpenDesignerForItem = { item ->
-                  activeDesign = WindowDesign(
-                    id = "des_${item.id}",
-                    name = item.description,
-                    productType = item.productType,
-                    materialFamily = item.materialFamily,
-                    widthMm = item.widthMm,
-                    heightMm = item.heightMm
-                  )
-                  currentScreen = Screen.DESIGNER
+                  // Load the saved design when it exists, otherwise derive it from the item.
+                  scope.launch {
+                    val saved = item.designId?.let { repository.getDesign(it) }
+                    activeDesign = saved ?: WindowDesign(
+                      id = "des_${item.id}",
+                      name = item.description,
+                      productType = item.productType,
+                      materialFamily = item.materialFamily,
+                      widthMm = item.widthMm,
+                      heightMm = item.heightMm,
+                      panels = listOf(
+                        PanelConfig("p1", OpeningType.CASEMENT_RIGHT),
+                        PanelConfig("p2", OpeningType.FIXED)
+                      )
+                    )
+                    navigate(Screen.DESIGNER)
+                  }
                 },
-                onOpenCuttingPlan = { currentScreen = Screen.CUTTING_PLAN },
-                onOpenQuotation = { currentScreen = Screen.QUOTATION },
-                onOpenPaymentDialog = { currentScreen = Screen.FINANCE },
+                onOpenCuttingPlan = { navigate(Screen.CUTTING_PLAN) },
+                onOpenQuotation = { navigate(Screen.QUOTATION) },
+                onOpenPaymentDialog = { navigate(Screen.FINANCE) },
                 onBack = { currentScreen = Screen.PROJECTS }
               )
             } else {
@@ -225,6 +363,9 @@ fun MainApp(repository: WorkshopRepository) {
           Screen.DESIGNER -> {
             WindowDesignerScreen(
               initialDesign = activeDesign,
+              defaultMarkupPercent = settings.defaultMarkupPercent,
+              exchangeRateUsdToAfn = settings.exchangeRateUsdToAfn,
+              canSave = can.canDesign,
               onSaveDesign = { d ->
                 activeDesign = d
                 scope.launch { repository.saveDesign(d) }
@@ -235,7 +376,8 @@ fun MainApp(repository: WorkshopRepository) {
               },
               onNavigateToQuotation = { d ->
                 activeDesign = d
-                currentScreen = Screen.QUOTATION
+                if (can.canCreateInvoices) currentScreen = Screen.QUOTATION
+                else accessDeniedMessage = Screen.QUOTATION.titlePersian
               },
               onNavigateToManufacturingInstructions = { d ->
                 activeDesign = d
@@ -255,9 +397,12 @@ fun MainApp(repository: WorkshopRepository) {
             }
             ProjectCalculatorScreen(
               availableProfiles = userProfileSystems,
+              defaultExchangeRate = settings.exchangeRateUsdToAfn,
+              defaultMarkupPercent = settings.defaultMarkupPercent,
+              defaultCurrency = settings.baseCurrency,
               onNavigateToDesigner = { design ->
                 activeDesign = design
-                currentScreen = Screen.DESIGNER
+                navigate(Screen.DESIGNER)
               },
               onSaveSession = { session ->
                 scope.launch { repository.saveCalculationSession(session) }
@@ -285,6 +430,8 @@ fun MainApp(repository: WorkshopRepository) {
           Screen.CUTTING_PLAN -> {
             CuttingPlanScreen(
               design = activeDesign,
+              sawKerfMm = settings.sawKerfMm,
+              endTrimMm = settings.endTrimMm,
               onBack = { currentScreen = Screen.DESIGNER }
             )
           }
@@ -293,6 +440,8 @@ fun MainApp(repository: WorkshopRepository) {
             QuotationScreen(
               design = activeDesign,
               projectId = selectedProjectId ?: "",
+              exchangeRateUsdToAfn = settings.exchangeRateUsdToAfn,
+              paymentTerms = settings.quotationPaymentTerms,
               onSaveInvoice = { inv ->
                 scope.launch { repository.saveInvoice(inv) }
               },
@@ -302,23 +451,25 @@ fun MainApp(repository: WorkshopRepository) {
 
           Screen.FINANCE -> {
             FinanceScreen(
-              invoices = projectInvoices,
-              payments = projectPayments,
-              expenses = emptyList(),
+              invoices = allInvoices,
+              payments = allPayments,
+              expenses = allExpenses,
               projects = projects,
               customers = customers,
-              onRecordPayment = { p ->
-                scope.launch { repository.savePayment(p) }
-              },
-              onRecordExpense = { _ -> }
+              baseCurrency = settings.baseCurrency,
+              exchangeRateUsdToAfn = settings.exchangeRateUsdToAfn,
+              canRecordPayments = can.canRecordPayments,
+              onRecordPayment = { p -> scope.launch { repository.savePayment(p) } },
+              onRecordExpense = { e -> scope.launch { repository.saveExpense(e) } }
             )
           }
 
           Screen.CUSTOMERS -> {
             CustomerListScreen(
               customers = customers,
+              canEdit = currentRole != UserRole.READ_ONLY,
               onSaveCustomer = { c ->
-                scope.launch { repository.saveCustomer(c) }
+                scope.launch { repository.createCustomerWithNextCode(c) }
               },
               onSelectCustomer = { c ->
                 val customerProjects = projects.filter { it.customerId == c.id }
@@ -335,49 +486,53 @@ fun MainApp(repository: WorkshopRepository) {
               profiles = profiles,
               glasses = glasses,
               accessories = accessories,
-              onAddProfile = { _ -> scope.launch { repository.getAllProfiles() } },
-              onAddGlass = { _ -> },
-              onAddAccessory = { _ -> }
+              canEdit = can.canEditCatalog,
+              onAddProfile = { p -> scope.launch { repository.saveProfile(p) } },
+              onAddGlass = { g -> scope.launch { repository.saveGlass(g) } },
+              onAddAccessory = { a -> scope.launch { repository.saveAccessory(a) } }
             )
           }
 
           Screen.INVENTORY -> {
             InventoryScreen(
-              movements = emptyList(),
-              onRecordMovement = { _ -> }
+              movements = inventoryMovements,
+              products = materialProducts,
+              projects = projects,
+              canRecord = can.canManageInventory,
+              onRecordMovement = { m -> scope.launch { repository.recordInventoryMovement(m) } }
             )
           }
 
           Screen.USERS -> {
             UsersScreen(
-              users = emptyList(),
-              auditLogs = emptyList(),
+              users = users,
+              auditLogs = auditLogs,
+              currentUserId = sessionUserId,
+              onSaveUser = { user, password -> repository.saveUser(user, password) },
+              onDeleteUser = { id -> repository.deleteUser(id) },
               onBack = { currentScreen = Screen.MORE }
             )
           }
 
           Screen.MORE -> {
             SettingsScreen(
-              workshopName = "کارگاه تخصصی در و پنجره دوجداره",
-              baseCurrency = "AFN",
-              exchangeRateUsdToAfn = "72.50",
-              defaultMarkup = "25.00",
-              sawKerfMm = "4",
-              onSaveSettings = { _, _, _, _, _ -> },
-              onExportBackup = {
-                """
-                {
-                  "app": "WindowWorkshop",
-                  "version": "1.0.0",
-                  "projectsCount": ${projects.size},
-                  "customersCount": ${customers.size},
-                  "timestamp": ${System.currentTimeMillis()}
-                }
-                """.trimIndent()
+              settings = settings,
+              currentRole = currentRole,
+              onSaveSettings = { newSettings ->
+                val error = repository.saveSettings(newSettings)
+                error
               },
-              onNavigateToUsers = { currentScreen = Screen.USERS },
-              onNavigateToMaterialsCatalog = { currentScreen = Screen.MATERIALS_CATALOG },
-              onNavigateToProjectCalculator = { currentScreen = Screen.PROJECT_CALCULATOR }
+              onExportBackup = { repository.exportBackupJson() },
+              onRestoreBackup = { json -> repository.restoreBackupJson(json) },
+              canBackup = can.canBackup,
+              onChangePassword = { showChangePasswordDialog = true },
+              onLogout = {
+                scope.launch { repository.logout() }
+                currentScreen = Screen.DASHBOARD
+              },
+              onNavigateToUsers = { navigate(Screen.USERS) },
+              onNavigateToMaterialsCatalog = { navigate(Screen.MATERIALS_CATALOG) },
+              onNavigateToProjectCalculator = { navigate(Screen.PROJECT_CALCULATOR) }
             )
           }
         }
@@ -385,3 +540,25 @@ fun MainApp(repository: WorkshopRepository) {
     }
   }
 }
+
+/** Single source of truth for role-based screen access (unit tested). */
+fun isScreenAllowed(target: Screen, permissions: ScreenPermissions): Boolean = when (target) {
+  Screen.USERS -> permissions.canManageUsers
+  Screen.MATERIALS_CATALOG, Screen.CATALOG -> permissions.canEditCatalog
+  Screen.INVENTORY -> permissions.canManageInventory
+  Screen.PROJECT_CALCULATOR, Screen.QUOTATION -> permissions.canCreateInvoices
+  Screen.FINANCE -> true // viewing is allowed; writing is gated per-action
+  Screen.DESIGNER -> permissions.canDesign
+  else -> true
+}
+
+data class ScreenPermissions(
+  val canManageProjects: Boolean,
+  val canDesign: Boolean,
+  val canCreateInvoices: Boolean,
+  val canRecordPayments: Boolean,
+  val canEditCatalog: Boolean,
+  val canManageInventory: Boolean,
+  val canManageUsers: Boolean,
+  val canBackup: Boolean
+)
