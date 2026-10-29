@@ -1,13 +1,11 @@
-import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
-
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
-  alias(libs.plugins.secrets)
-  alias(libs.plugins.google.services)
 }
 
+// The Android SDK is machine-specific (local.properties). On machines without it, `gradle tasks`
+// and other configuration-only commands keep working; only SDK-dependent tasks will stop.
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -16,8 +14,8 @@ android {
     applicationId = "com.aistudio.windowworkshop.fzyr"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 2
+    versionName = "1.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -26,14 +24,18 @@ android {
   // and updating Android apps in AI Studio.
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
+      val configuredKeystore = System.getenv("KEYSTORE_PATH")?.let { file(it) }
+        ?: file("${rootDir}/my-upload-key.jks")
+      // Only bind the file when it exists, so local debug/bundle builds don't fail with a
+      // missing keystore. A release APK still needs a real keystore to be produced.
+      storeFile = configuredKeystore.takeIf { it.exists() }
       storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
+      keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
+      val debugKeystore = file("${rootDir}/debug.keystore")
+      storeFile = debugKeystore.takeIf { it.exists() }
       storePassword = "android"
       keyAlias = "androiddebugkey"
       keyPassword = "android"
@@ -45,14 +47,12 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
-      // AI Studio.
+      // Falls back to no signing when no keystore is available (unsigned APK for CI/local builds).
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
-      // AI Studio.
-      signingConfig = signingConfigs.getByName("debugConfig")
+      // When the shared debug keystore is absent, AGP generates/uses the default one.
+      signingConfig = signingConfigs.getByName("debugConfig").takeIf { it.storeFile != null }
     }
   }
   compileOptions {
@@ -70,21 +70,12 @@ android {
   }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
-secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
-  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
-}
 
-googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
-  implementation(platform(libs.firebase.bom))
   // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
   // implementation(libs.androidx.camera.camera2)
@@ -107,18 +98,8 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   // implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
-  implementation(libs.firebase.ai)
-  // Uncomment to use Firestore:
-  // implementation(libs.firebase.firestore)
-
-  // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
-  // Sign-In via Credential Manager:
-  // implementation(libs.firebase.auth)
-  // implementation(libs.androidx.credentials)
-  // implementation(libs.androidx.credentials.play.services)
-  // implementation(libs.googleid)
-  implementation(libs.firebase.appcheck.recaptcha)
-  implementation(libs.firebase.appcheck.debug)
+  // The app is fully offline: authentication is local (PBKDF2) and no cloud services
+  // are required, so the Firebase / Google Services stack was removed.
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)
