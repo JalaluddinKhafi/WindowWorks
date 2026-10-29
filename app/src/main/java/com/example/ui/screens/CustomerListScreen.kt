@@ -20,6 +20,7 @@ import com.example.domain.model.CustomerModel
 @Composable
 fun CustomerListScreen(
   customers: List<CustomerModel>,
+  canEdit: Boolean = true,
   onSaveCustomer: (CustomerModel) -> Unit,
   onSelectCustomer: (CustomerModel) -> Unit
 ) {
@@ -37,11 +38,13 @@ fun CustomerListScreen(
 
   Scaffold(
     floatingActionButton = {
-      FloatingActionButton(
-        onClick = { showAddDialog = true },
-        containerColor = MaterialTheme.colorScheme.primary
-      ) {
-        Icon(Icons.Default.Add, contentDescription = "افزودن مشتری جدید", tint = MaterialTheme.colorScheme.onPrimary)
+      if (canEdit) {
+        FloatingActionButton(
+          onClick = { showAddDialog = true },
+          containerColor = MaterialTheme.colorScheme.primary
+        ) {
+          Icon(Icons.Default.Add, contentDescription = "افزودن مشتری جدید", tint = MaterialTheme.colorScheme.onPrimary)
+        }
       }
     }
   ) { padding ->

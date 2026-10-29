@@ -27,19 +27,21 @@ import java.math.RoundingMode
 fun QuotationScreen(
   design: WindowDesign,
   projectId: String,
+  exchangeRateUsdToAfn: BigDecimal = BigDecimal("72.50"),
+  defaultMarkupPercent: BigDecimal = BigDecimal("25.00"),
+  paymentTerms: String = "۵۰٪ پیش‌پرداخت هنگام عقد قرارداد، ۴۰٪ هنگام تحویل، ۱۰٪ پس از نصب و تحویل نهایی.",
   onSaveInvoice: (InvoiceModel) -> Unit,
   onBack: () -> Unit
 ) {
   val context = LocalContext.current
-  var markupPercent by remember { mutableFloatStateOf(25f) }
+  var markupPercent by remember { mutableStateOf(defaultMarkupPercent) }
   var selectedCurrency by remember { mutableStateOf("AFN") }
-  var exchangeRateUsdToAfn by remember { mutableStateOf(BigDecimal("72.50")) }
 
   val estimate = remember(design, markupPercent, selectedCurrency) {
     val estAfn = CostCalculator.estimateCost(
       design = design,
       projectId = projectId,
-      markupPercent = BigDecimal(markupPercent.toDouble()).setScale(2, RoundingMode.HALF_UP),
+      markupPercent = markupPercent.setScale(2, RoundingMode.HALF_UP).max(BigDecimal.ZERO),
       currency = "AFN"
     )
 
@@ -82,7 +84,7 @@ fun QuotationScreen(
         actions = {
           IconButton(
             onClick = {
-              val shareText = buildQuotationShareText(design, estimate)
+              val shareText = buildQuotationShareText(design, estimate, paymentTerms)
               val sendIntent = Intent().apply {
                 action = Intent.ACTION_SEND
                 putExtra(Intent.EXTRA_TEXT, shareText)
@@ -186,7 +188,7 @@ fun QuotationScreen(
               verticalAlignment = Alignment.CenterVertically
             ) {
               Text(
-                "درصد سود کارگاهی (مارک‌آپ): ${CurrencyHelper.toPersianDigits(markupPercent.toInt())}%",
+                "درصد سود کارگاهی (مارک‌آپ): ${CurrencyHelper.toPersianDigits(markupPercent.setScale(0, RoundingMode.HALF_UP).toInt())}%",
                 style = MaterialTheme.typography.bodyMedium
               )
               Text(
@@ -196,8 +198,8 @@ fun QuotationScreen(
               )
             }
             Slider(
-              value = markupPercent,
-              onValueChange = { markupPercent = it },
+              value = markupPercent.toFloat().coerceIn(5f, 60f),
+              onValueChange = { markupPercent = BigDecimal(it.toInt()) },
               valueRange = 5f..60f
             )
           }
@@ -227,7 +229,7 @@ fun QuotationScreen(
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             CostRow("بهای تمام‌شده کل کارگاه", estimate.totalBaseCost, estimate.currency, isBold = true)
             CostRow(
-              "سود برآورد شده (${CurrencyHelper.toPersianDigits(markupPercent.toInt())}%)",
+              "سود برآورد شده (${CurrencyHelper.toPersianDigits(markupPercent.setScale(0, RoundingMode.HALF_UP).toInt())}%)",
               estimate.quotationPrice.subtract(estimate.totalBaseCost),
               estimate.currency,
               isBold = true,
@@ -306,7 +308,11 @@ private fun CostRow(
   }
 }
 
-private fun buildQuotationShareText(design: WindowDesign, est: com.example.domain.model.CostEstimate): String {
+private fun buildQuotationShareText(
+  design: WindowDesign,
+  est: com.example.domain.model.CostEstimate,
+  paymentTerms: String
+): String {
   val sb = StringBuilder()
   sb.appendLine("پیش‌فاکتور رسمی ساخت در و پنجره دوجداره")
   sb.appendLine("کارگاه تخصصی در و پنجره")
@@ -316,6 +322,6 @@ private fun buildQuotationShareText(design: WindowDesign, est: com.example.domai
   sb.appendLine("----------------------------------------")
   sb.appendLine("بهای تمام‌شده: ${CurrencyHelper.formatMoney(est.totalBaseCost, est.currency)}")
   sb.appendLine("مبلغ کل پیش‌فاکتور: ${CurrencyHelper.formatMoney(est.quotationPrice, est.currency)}")
-  sb.appendLine("شرایط پرداخت: ۵۰٪ پیش‌پرداخت هنگام عقد قرارداد، ۴۰٪ هنگام تحویل، ۱۰٪ پس از نصب و تحویل نهایی.")
+  sb.appendLine("شرایط پرداخت: $paymentTerms")
   return sb.toString()
 }

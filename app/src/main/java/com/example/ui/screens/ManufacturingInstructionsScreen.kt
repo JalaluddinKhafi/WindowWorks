@@ -93,12 +93,14 @@ fun ManufacturingInstructionsScreen(
         title = "ریز متره و مصالح خام مصرفی (BOM)",
         icon = Icons.Default.ReceiptLong,
         content = run {
-          val profMeters = mfg.totalProfileLengthMm / 1000.0
-          val rfMeters = mfg.totalReinforcementLengthMm / 1000.0
+          val profMeters = java.math.BigDecimal(mfg.totalProfileLengthMm)
+            .divide(java.math.BigDecimal(1000), 2, java.math.RoundingMode.HALF_UP)
+          val rfMeters = java.math.BigDecimal(mfg.totalReinforcementLengthMm)
+            .divide(java.math.BigDecimal(1000), 2, java.math.RoundingMode.HALF_UP)
           val screwEstimate = ((mfg.totalReinforcementLengthMm / 250) + 16).coerceAtLeast(16)
           listOf(
-            "طول کل پروفیل مصرفی: ${CurrencyHelper.toPersianDigits(String.format(Locale.US, "%.2f", profMeters))} متر",
-            "تقویت گالوانیزه ۱.۲۵mm: ${CurrencyHelper.toPersianDigits(String.format(Locale.US, "%.2f", rfMeters))} متر",
+            "طول کل پروفیل مصرفی: ${CurrencyHelper.toPersianDigits(profMeters.toPlainString())} متر",
+            "تقویت گالوانیزه ۱.۲۵mm: ${CurrencyHelper.toPersianDigits(rfMeters.toPlainString())} متر",
             "لاستیک درزبندی EPDM: ${CurrencyHelper.toPersianDigits(mfg.totalGasketMeters.toPlainString())} متر",
             "تعداد پیچ گالوانیزه سرمته: ${CurrencyHelper.toPersianDigits(screwEstimate)} عدد (فاصله هر ۲۵cm)",
             "مساحت کل شیشه دوجداره: ${CurrencyHelper.toPersianDigits(mfg.totalGlassAreaM2.toPlainString())} مترمربع"

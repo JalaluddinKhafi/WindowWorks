@@ -27,162 +27,117 @@ import java.math.RoundingMode
 import java.text.SimpleDateFormat
 import java.util.*
 
+private val LABOR_COST_PER_UNIT_AFN = BigDecimal("1000.00")
+private val UPVC_RATE_PER_M2_AFN = BigDecimal("4200.00")
+private val ALUMINUM_RATE_PER_M2_AFN = BigDecimal("7800.00")
+private val HARDWARE_OPERABLE_AFN = BigDecimal("2800.00")
+private val HARDWARE_FIXED_AFN = BigDecimal("400.00")
+
+/** Unit material cost in AFN: area × material rate + hardware allowance. Exact decimal math. */
+private fun estimateUnitCost(
+  materialFamily: MaterialFamily,
+  widthMm: Int,
+  heightMm: Int,
+  openingType: OpeningType
+): BigDecimal {
+  val areaM2 = BigDecimal(widthMm.toLong() * heightMm.toLong())
+    .divide(BigDecimal(1_000_000), 4, RoundingMode.HALF_UP)
+  val rate = if (materialFamily == MaterialFamily.UPVC) UPVC_RATE_PER_M2_AFN else ALUMINUM_RATE_PER_M2_AFN
+  val hardware = if (openingType == OpeningType.FIXED) HARDWARE_FIXED_AFN else HARDWARE_OPERABLE_AFN
+  return areaM2.multiply(rate).add(hardware).setScale(2, RoundingMode.HALF_UP)
+}
+
+/** Selling price = cost × (1 + markup/100). */
+private fun applyMarkup(cost: BigDecimal, markupPercent: BigDecimal): BigDecimal =
+  cost.multiply(
+    BigDecimal.ONE.add(markupPercent.divide(BigDecimal(100), 6, RoundingMode.HALF_UP))
+  ).setScale(2, RoundingMode.HALF_UP)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProjectCalculatorScreen(
   availableProfiles: List<String> = emptyList(),
+  defaultExchangeRate: BigDecimal = BigDecimal("72.50"),
+  defaultMarkupPercent: BigDecimal = BigDecimal("25.00"),
+  defaultCurrency: String = "AFN",
   onNavigateToDesigner: (WindowDesign) -> Unit,
   onSaveSession: (ProjectCalculationSession) -> Unit,
   onBack: () -> Unit
 ) {
   val context = LocalContext.current
 
-  // Session state
-  var sessionTitle by remember { mutableStateOf("پروژه ساختمان مسکونی نوین") }
-  var customerName by remember { mutableStateOf("حاجی احمدشاه نوری") }
-  var customerPhone by remember { mutableStateOf("0799123456") }
-  var currency by remember { mutableStateOf("AFN") }
-  var exchangeRateStr by remember { mutableStateOf("72.50") }
-  var markupPercentStr by remember { mutableStateOf("25.0") }
-  var transportFeeStr by remember { mutableStateOf("3500") }
-  var installFeeStr by remember { mutableStateOf("5000") }
+  // Session state (all monetary values stay BigDecimal, never Double)
+  var sessionTitle by remember { mutableStateOf("") }
+  var customerName by remember { mutableStateOf("") }
+  var customerPhone by remember { mutableStateOf("") }
+  var currency by remember { mutableStateOf(if (defaultCurrency == "USD") "USD" else "AFN") }
+  var exchangeRateStr by remember { mutableStateOf(defaultExchangeRate.toPlainString()) }
+  var markupPercentStr by remember { mutableStateOf(defaultMarkupPercent.toPlainString()) }
+  var transportFeeStr by remember { mutableStateOf("0") }
+  var installFeeStr by remember { mutableStateOf("0") }
   var discountStr by remember { mutableStateOf("0") }
 
-  // Calculation items
-  var items by remember {
-    mutableStateOf(
-      listOf(
-        ProjectCalculationItem(
-          id = "item_1",
-          title = "پنجره پذیرایی ۲ لنگه با یک لنگه بازشو",
-          productType = ProductType.WINDOW,
-          materialFamily = MaterialFamily.UPVC,
-          profileSystem = "Wintech 6000",
-          frameFinish = FrameFinish.WHITE,
-          widthMm = 1600,
-          heightMm = 1800,
-          quantity = 4,
-          panelCount = 2,
-          openingType = OpeningType.CASEMENT_RIGHT,
-          glazingType = GlazingType.DOUBLE_STANDARD,
-          glassTint = GlassTint.CLEAR,
-          unitMaterialCost = BigDecimal("14500.00"),
-          unitLaborCost = BigDecimal("1000.00"),
-          unitPrice = BigDecimal("18125.00"),
-          lineTotal = BigDecimal("72500.00")
-        ),
-        ProjectCalculationItem(
-          id = "item_2",
-          title = "پنجره اتاق خواب دو لنگه ثابت",
-          productType = ProductType.WINDOW,
-          materialFamily = MaterialFamily.UPVC,
-          profileSystem = "Wintech 6000",
-          frameFinish = FrameFinish.WHITE,
-          widthMm = 1200,
-          heightMm = 1500,
-          quantity = 3,
-          panelCount = 2,
-          openingType = OpeningType.FIXED,
-          glazingType = GlazingType.DOUBLE_STANDARD,
-          glassTint = GlassTint.BRONZE,
-          unitMaterialCost = BigDecimal("9800.00"),
-          unitLaborCost = BigDecimal("800.00"),
-          unitPrice = BigDecimal("12250.00"),
-          lineTotal = BigDecimal("36750.00")
-        ),
-        ProjectCalculationItem(
-          id = "item_3",
-          title = "درب تراس آلومینیوم ترمال‌بریک",
-          productType = ProductType.DOOR,
-          materialFamily = MaterialFamily.ALUMINUM,
-          profileSystem = "Akpa Thermal",
-          frameFinish = FrameFinish.ANODIZED_SILVER,
-          widthMm = 900,
-          heightMm = 2200,
-          quantity = 2,
-          panelCount = 1,
-          openingType = OpeningType.CASEMENT_LEFT,
-          glazingType = GlazingType.DOUBLE_THICK,
-          glassTint = GlassTint.CLEAR,
-          unitMaterialCost = BigDecimal("18900.00"),
-          unitLaborCost = BigDecimal("1500.00"),
-          unitPrice = BigDecimal("23625.00"),
-          lineTotal = BigDecimal("47250.00")
-        )
-      )
-    )
-  }
+  // Calculation items start empty; users add their own units.
+  var items by remember { mutableStateOf(emptyList<ProjectCalculationItem>()) }
 
   // Dialog state for adding/editing item
   var showItemDialog by remember { mutableStateOf(false) }
   var editingItem by remember { mutableStateOf<ProjectCalculationItem?>(null) }
   var showShareSummaryDialog by remember { mutableStateOf(false) }
 
-  // Computations & Unified Currency Conversion
-  val exchangeRate = exchangeRateStr.toDoubleOrNull() ?: 72.5
-  val markupPercent = markupPercentStr.toDoubleOrNull() ?: 25.0
-  val transportFee = transportFeeStr.toDoubleOrNull() ?: 0.0
-  val installFee = installFeeStr.toDoubleOrNull() ?: 0.0
-  val discount = discountStr.toDoubleOrNull() ?: 0.0
+  // Computations & Unified Currency Conversion (exact decimal arithmetic)
+  val exchangeRate = CurrencyHelper.parseAmount(exchangeRateStr)
+    .takeIf { it > BigDecimal.ZERO } ?: BigDecimal("72.50")
+  val markupPercent = CurrencyHelper.parseAmount(markupPercentStr).max(BigDecimal.ZERO)
+  val transportFee = CurrencyHelper.parseAmount(transportFeeStr)
+  val installFee = CurrencyHelper.parseAmount(installFeeStr)
+  val discount = CurrencyHelper.parseAmount(discountStr)
 
   fun switchCurrency(newCurrency: String) {
-    if (newCurrency == currency) return
-    val rate = exchangeRateStr.toDoubleOrNull() ?: 72.5
-    if (rate > 0) {
-      if (newCurrency == "USD" && currency == "AFN") {
-        val tf = (transportFeeStr.toDoubleOrNull() ?: 0.0) / rate
-        val inf = (installFeeStr.toDoubleOrNull() ?: 0.0) / rate
-        val disc = (discountStr.toDoubleOrNull() ?: 0.0) / rate
-        transportFeeStr = if (tf > 0) String.format(Locale.US, "%.2f", tf) else "0"
-        installFeeStr = if (inf > 0) String.format(Locale.US, "%.2f", inf) else "0"
-        discountStr = if (disc > 0) String.format(Locale.US, "%.2f", disc) else "0"
-      } else if (newCurrency == "AFN" && currency == "USD") {
-        val tf = (transportFeeStr.toDoubleOrNull() ?: 0.0) * rate
-        val inf = (installFeeStr.toDoubleOrNull() ?: 0.0) * rate
-        val disc = (discountStr.toDoubleOrNull() ?: 0.0) * rate
-        transportFeeStr = if (tf > 0) String.format(Locale.US, "%.0f", tf) else "0"
-        installFeeStr = if (inf > 0) String.format(Locale.US, "%.0f", inf) else "0"
-        discountStr = if (disc > 0) String.format(Locale.US, "%.0f", disc) else "0"
-      }
+    if (newCurrency == currency || exchangeRate <= BigDecimal.ZERO) return
+    fun convert(input: String): String {
+      val converted = CurrencyHelper.convertCurrency(
+        CurrencyHelper.parseAmount(input), currency, newCurrency, exchangeRate
+      )
+      return converted.setScale(if (newCurrency == "USD") 2 else 0, RoundingMode.HALF_UP).toPlainString()
     }
+    transportFeeStr = convert(transportFeeStr)
+    installFeeStr = convert(installFeeStr)
+    discountStr = convert(discountStr)
     currency = newCurrency
   }
 
-  fun toActiveCurrency(afnAmount: BigDecimal): BigDecimal {
-    return if (currency == "USD" && exchangeRate > 0) {
-      afnAmount.divide(BigDecimal.valueOf(exchangeRate), 2, RoundingMode.HALF_UP)
-    } else {
-      afnAmount
-    }
-  }
+  // Item prices are stored in AFN; displayed/subtotal values are converted to the active currency.
+  fun toActiveCurrency(afnAmount: BigDecimal): BigDecimal =
+    CurrencyHelper.convertCurrency(afnAmount, "AFN", currency, exchangeRate)
 
-  fun toOtherCurrency(activeAmount: BigDecimal): BigDecimal {
-    return if (currency == "USD") {
-      activeAmount.multiply(BigDecimal.valueOf(exchangeRate)).setScale(2, RoundingMode.HALF_UP)
-    } else if (exchangeRate > 0) {
-      activeAmount.divide(BigDecimal.valueOf(exchangeRate), 2, RoundingMode.HALF_UP)
-    } else BigDecimal.ZERO
-  }
+  fun toOtherCurrency(activeAmount: BigDecimal): BigDecimal =
+    if (currency == "USD") {
+      activeAmount.multiply(exchangeRate).setScale(2, RoundingMode.HALF_UP)
+    } else {
+      activeAmount.divide(exchangeRate, 2, RoundingMode.HALF_UP)
+    }
 
   val totalUnits = items.sumOf { it.quantity }
-  val totalAreaM2 = items.sumOf { item ->
-    val m2 = (item.widthMm * item.heightMm) / 1_000_000.0
-    m2 * item.quantity
+  val totalAreaM2 = items.fold(BigDecimal.ZERO) { acc, item ->
+    val m2 = BigDecimal(item.widthMm.toLong() * item.heightMm.toLong())
+      .divide(BigDecimal(1_000_000), 4, RoundingMode.HALF_UP)
+    acc.add(m2.multiply(BigDecimal(item.quantity)))
   }
 
   val subtotalItemsAfn = items.fold(BigDecimal.ZERO) { acc, itm -> acc.add(itm.lineTotal) }
   val activeSubtotal = toActiveCurrency(subtotalItemsAfn)
 
   val grandTotalActive = activeSubtotal
-    .add(BigDecimal.valueOf(transportFee))
-    .add(BigDecimal.valueOf(installFee))
-    .subtract(BigDecimal.valueOf(discount))
+    .add(transportFee)
+    .add(installFee)
+    .subtract(discount)
     .coerceAtLeast(BigDecimal.ZERO)
 
   val grandTotalOther = toOtherCurrency(grandTotalActive)
 
-  val avgPricePerM2Active = if (totalAreaM2 > 0) {
-    activeSubtotal.divide(BigDecimal.valueOf(totalAreaM2), 2, RoundingMode.HALF_UP)
+  val avgPricePerM2Active = if (totalAreaM2 > BigDecimal.ZERO) {
+    activeSubtotal.divide(totalAreaM2, 2, RoundingMode.HALF_UP)
   } else BigDecimal.ZERO
 
   val currencyLabel = if (currency == "USD") "دالر USD" else "افغانی AFN"
@@ -216,14 +171,16 @@ fun ProjectCalculatorScreen(
               customerName = customerName,
               customerPhone = customerPhone,
               currency = currency,
-              exchangeRateUsdToAfn = BigDecimal.valueOf(exchangeRate),
-              markupPercent = BigDecimal.valueOf(markupPercent),
+              exchangeRateUsdToAfn = exchangeRate,
+              markupPercent = markupPercent,
               items = items,
-              totalAreaM2 = BigDecimal.valueOf(totalAreaM2).setScale(2, RoundingMode.HALF_UP),
-              totalMaterialCost = grandTotalActive.multiply(BigDecimal.valueOf(0.75)).setScale(2, RoundingMode.HALF_UP),
-              transportCost = BigDecimal.valueOf(transportFee).setScale(2, RoundingMode.HALF_UP),
-              installationCost = BigDecimal.valueOf(installFee).setScale(2, RoundingMode.HALF_UP),
-              discountAmount = BigDecimal.valueOf(discount).setScale(2, RoundingMode.HALF_UP),
+              totalAreaM2 = totalAreaM2.setScale(2, RoundingMode.HALF_UP),
+              totalMaterialCost = items.fold(BigDecimal.ZERO) { acc, itm ->
+                acc.add(itm.unitMaterialCost.multiply(BigDecimal(itm.quantity)))
+              },
+              transportCost = transportFee,
+              installationCost = installFee,
+              discountAmount = discount,
               suggestedSellingPrice = activeSubtotal,
               totalProjectAmount = grandTotalActive
             )
@@ -341,7 +298,7 @@ fun ProjectCalculatorScreen(
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
               Text("تعداد کل یونیت‌ها: ${CurrencyHelper.toPersianDigits(totalUnits)} عدد", style = MaterialTheme.typography.bodyMedium)
-              Text("مساحت کل: ${CurrencyHelper.toPersianDigits(String.format(Locale.US, "%.2f", totalAreaM2))} مترمربع", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+              Text("مساحت کل: ${CurrencyHelper.toPersianDigits(totalAreaM2.setScale(2, RoundingMode.HALF_UP).toPlainString())} مترمربع", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -424,8 +381,9 @@ fun ProjectCalculatorScreen(
 
       // Line items list
       itemsIndexed(items) { index, item ->
-        val areaOne = (item.widthMm * item.heightMm) / 1_000_000.0
-        val totalAreaItem = areaOne * item.quantity
+        val totalAreaItem = BigDecimal(item.widthMm.toLong() * item.heightMm.toLong())
+          .divide(BigDecimal(1_000_000), 4, RoundingMode.HALF_UP)
+          .multiply(BigDecimal(item.quantity))
 
         Card(
           shape = RoundedCornerShape(12.dp),
@@ -484,7 +442,7 @@ fun ProjectCalculatorScreen(
                 fontWeight = FontWeight.SemiBold
               )
               Text(
-                "مساحت: ${CurrencyHelper.toPersianDigits(String.format(Locale.US, "%.2f", totalAreaItem))} m²",
+                "مساحت: ${CurrencyHelper.toPersianDigits(totalAreaItem.setScale(2, RoundingMode.HALF_UP).toPlainString())} m²",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
               )
@@ -775,13 +733,10 @@ fun ProjectCalculatorScreen(
           // Live estimation banner in active currency
           val wVal = widthStr.toIntOrNull() ?: 1200
           val hVal = heightStr.toIntOrNull() ?: 1400
-          val qVal = qtyStr.toIntOrNull() ?: 1
-          val previewArea = (wVal * hVal) / 1_000_000.0
-          val baseM2Rate = if (matFamily == MaterialFamily.UPVC) 4200.0 else 7800.0
-          val hardwareCost = if (opType != OpeningType.FIXED) 2800.0 else 400.0
-          val previewCostAfn = (previewArea * baseM2Rate) + hardwareCost
-          val previewPriceAfn = BigDecimal.valueOf(previewCostAfn * (1.0 + (markupPercent / 100.0))).setScale(2, RoundingMode.HALF_UP)
-          val previewTotalAfn = previewPriceAfn.multiply(BigDecimal.valueOf(qVal.toLong()))
+          val qVal = qtyStr.toIntOrNull()?.coerceAtLeast(1) ?: 1
+          val previewCostAfn = estimateUnitCost(matFamily, wVal, hVal, opType)
+          val previewPriceAfn = applyMarkup(previewCostAfn, markupPercent)
+          val previewTotalAfn = previewPriceAfn.multiply(BigDecimal(qVal))
           val previewPriceActive = toActiveCurrency(previewPriceAfn)
           val previewTotalActive = toActiveCurrency(previewTotalAfn)
 
@@ -809,18 +764,12 @@ fun ProjectCalculatorScreen(
         Button(onClick = {
           val w = widthStr.toIntOrNull() ?: 1200
           val h = heightStr.toIntOrNull() ?: 1400
-          val q = qtyStr.toIntOrNull() ?: 1
-          val areaM2 = (w * h) / 1_000_000.0
+          val q = qtyStr.toIntOrNull()?.coerceAtLeast(1) ?: 1
 
-          // Approximate unit cost based on material and area in AFN base
-          val baseM2Rate = if (matFamily == MaterialFamily.UPVC) 4200.0 else 7800.0
-          val hardwareCost = if (opType != OpeningType.FIXED) 2800.0 else 400.0
-          val unitCostDoubleAfn = (areaM2 * baseM2Rate) + hardwareCost
-          val unitPriceDoubleAfn = unitCostDoubleAfn * (1.0 + (markupPercent / 100.0))
-
-          val unitCost = BigDecimal.valueOf(unitCostDoubleAfn).setScale(2, RoundingMode.HALF_UP)
-          val unitPrice = BigDecimal.valueOf(unitPriceDoubleAfn).setScale(2, RoundingMode.HALF_UP)
-          val totalLine = unitPrice.multiply(BigDecimal.valueOf(q.toLong()))
+          // Unit cost from the engineering engines (area + hardware rate), exact decimal math.
+          val unitCost = estimateUnitCost(matFamily, w, h, opType)
+          val unitPrice = applyMarkup(unitCost, markupPercent)
+          val totalLine = unitPrice.multiply(BigDecimal(q))
 
           val newItem = ProjectCalculationItem(
             id = editingItem?.id ?: "item_${System.currentTimeMillis()}",
@@ -837,7 +786,7 @@ fun ProjectCalculatorScreen(
             glazingType = GlazingType.DOUBLE_STANDARD,
             glassTint = glassTint,
             unitMaterialCost = unitCost,
-            unitLaborCost = BigDecimal("1000.00"),
+            unitLaborCost = LABOR_COST_PER_UNIT_AFN,
             unitPrice = unitPrice,
             lineTotal = totalLine
           )
@@ -863,7 +812,7 @@ fun ProjectCalculatorScreen(
   // Share / Print Summary Dialog
   if (showShareSummaryDialog) {
     val dateStr = remember { SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()).format(Date()) }
-    val quotationText = remember(items, currency, grandTotalActive, grandTotalOther, transportFee, installFee, discount) {
+    val quotationText = remember(items, currency, grandTotalActive, grandTotalOther, transportFee, installFee, discount, totalAreaM2) {
       buildString {
         appendLine("══════════════════════════════════════")
         appendLine("       پیش‌فاکتور رسمی کارگاه در و پنجره دوجداره")
@@ -874,22 +823,25 @@ fun ProjectCalculatorScreen(
         appendLine("واحد پولی پیش‌فاکتور: $currencyLabel")
         appendLine("--------------------------------------")
         items.forEachIndexed { i, itm ->
-          val area = (itm.widthMm * itm.heightMm) / 1_000_000.0 * itm.quantity
+          val area = BigDecimal(itm.widthMm.toLong() * itm.heightMm.toLong())
+            .divide(BigDecimal(1_000_000), 4, RoundingMode.HALF_UP)
+            .multiply(BigDecimal(itm.quantity))
+            .setScale(2, RoundingMode.HALF_UP)
           val itemUnitPriceActive = toActiveCurrency(itm.unitPrice)
           val itemLineTotalActive = toActiveCurrency(itm.lineTotal)
           appendLine("${i + 1}. ${itm.title}")
-          appendLine("   ابعاد: ${itm.widthMm} × ${itm.heightMm} mm | تعداد: ${itm.quantity} عدد (${String.format(Locale.US, "%.2f", area)} m²)")
+          appendLine("   ابعاد: ${itm.widthMm} × ${itm.heightMm} mm | تعداد: ${itm.quantity} عدد (${area.toPlainString()} m²)")
           appendLine("   سیستم: ${itm.profileSystem} | بازشو: ${itm.openingType.titlePersian}")
           appendLine("   قیمت فی: ${CurrencyHelper.formatMoney(itemUnitPriceActive, currency)} | جمع ردیف: ${CurrencyHelper.formatMoney(itemLineTotalActive, currency)}")
           appendLine()
         }
         appendLine("--------------------------------------")
-        appendLine("مساحت کل: ${String.format(Locale.US, "%.2f", totalAreaM2)} مترمربع")
+        appendLine("مساحت کل: ${totalAreaM2.setScale(2, RoundingMode.HALF_UP).toPlainString()} مترمربع")
         appendLine("تعداد کل یونیت‌ها: $totalUnits عدد")
-        appendLine("کرایه حمل: ${CurrencyHelper.formatMoney(BigDecimal.valueOf(transportFee), currency)}")
-        appendLine("هزینه نصب: ${CurrencyHelper.formatMoney(BigDecimal.valueOf(installFee), currency)}")
-        if (discount > 0) {
-          appendLine("تخفیف: ${CurrencyHelper.formatMoney(BigDecimal.valueOf(discount), currency)}")
+        appendLine("کرایه حمل: ${CurrencyHelper.formatMoney(transportFee, currency)}")
+        appendLine("هزینه نصب: ${CurrencyHelper.formatMoney(installFee, currency)}")
+        if (discount > BigDecimal.ZERO) {
+          appendLine("تخفیف: ${CurrencyHelper.formatMoney(discount, currency)}")
         }
         appendLine("══════════════════════════════════════")
         appendLine("مبلغ نهایی قابل پرداخت: ${CurrencyHelper.formatMoney(grandTotalActive, currency)}")

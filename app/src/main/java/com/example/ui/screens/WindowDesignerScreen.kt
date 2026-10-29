@@ -29,6 +29,9 @@ import java.util.Locale
 @Composable
 fun WindowDesignerScreen(
   initialDesign: WindowDesign,
+  defaultMarkupPercent: BigDecimal = BigDecimal("25.00"),
+  exchangeRateUsdToAfn: BigDecimal = BigDecimal("72.50"),
+  canSave: Boolean = true,
   onSaveDesign: (WindowDesign) -> Unit,
   onNavigateToCutting: (WindowDesign) -> Unit,
   onNavigateToQuotation: (WindowDesign) -> Unit,
@@ -48,15 +51,17 @@ fun WindowDesignerScreen(
     CostCalculator.estimateCost(design)
   }
 
-  // Cost metrics
-  val areaM2 = (design.widthMm * design.heightMm) / 1_000_000.0
-  val perimeterMeters = ((design.widthMm + design.heightMm) * 2) / 1000.0
-  val pricePerM2Afn = if (areaM2 > 0) {
-    estimate.quotationPrice.divide(BigDecimal.valueOf(areaM2), 2, RoundingMode.HALF_UP)
+  // Cost metrics (exact decimal area / perimeter)
+  val areaM2 = BigDecimal(design.widthMm.toLong() * design.heightMm.toLong())
+    .divide(BigDecimal(1_000_000), 4, RoundingMode.HALF_UP)
+  val perimeterMeters = BigDecimal((design.widthMm + design.heightMm).toLong() * 2)
+    .divide(BigDecimal(1000), 4, RoundingMode.HALF_UP)
+  val pricePerM2Afn = if (areaM2 > BigDecimal.ZERO) {
+    estimate.quotationPrice.divide(areaM2, 2, RoundingMode.HALF_UP)
   } else BigDecimal.ZERO
 
-  val pricePerLinearMeterAfn = if (perimeterMeters > 0) {
-    estimate.quotationPrice.divide(BigDecimal.valueOf(perimeterMeters), 2, RoundingMode.HALF_UP)
+  val pricePerLinearMeterAfn = if (perimeterMeters > BigDecimal.ZERO) {
+    estimate.quotationPrice.divide(perimeterMeters, 2, RoundingMode.HALF_UP)
   } else BigDecimal.ZERO
 
   Scaffold(
@@ -84,8 +89,10 @@ fun WindowDesignerScreen(
           IconButton(onClick = { onNavigateToManufacturingInstructions(design) }) {
             Icon(Icons.Default.Engineering, contentDescription = "نقشه ساخت کارگاهی")
           }
-          IconButton(onClick = { onSaveDesign(design) }) {
-            Icon(Icons.Default.Save, contentDescription = "ذخیره طراحی", tint = MaterialTheme.colorScheme.primary)
+          if (canSave) {
+            IconButton(onClick = { onSaveDesign(design) }) {
+              Icon(Icons.Default.Save, contentDescription = "ذخیره طراحی", tint = MaterialTheme.colorScheme.primary)
+            }
           }
         }
       )
@@ -563,22 +570,23 @@ fun WindowDesignerScreen(
 
   // Cost Calculation Bottom Sheet / Dialog
   if (showCostSheet) {
-    var markupPctStr by remember { mutableStateOf(estimate.markupPercent.toInt().toString()) }
-    val currentMarkup = markupPctStr.toDoubleOrNull() ?: 25.0
+    var markupPctStr by remember { mutableStateOf(defaultMarkupPercent.stripTrailingZeros().toPlainString()) }
+    val currentMarkup = CurrencyHelper.parseAmount(markupPctStr)
+      .takeIf { it >= BigDecimal.ZERO } ?: defaultMarkupPercent
 
     val recalculatedEstimate = remember(design, currentMarkup) {
-      CostCalculator.estimateCost(design, markupPercent = BigDecimal.valueOf(currentMarkup))
+      CostCalculator.estimateCost(design, markupPercent = currentMarkup)
     }
 
-    val dynamicPricePerM2 = if (areaM2 > 0) {
-      recalculatedEstimate.quotationPrice.divide(BigDecimal.valueOf(areaM2), 2, RoundingMode.HALF_UP)
+    val dynamicPricePerM2 = if (areaM2 > BigDecimal.ZERO) {
+      recalculatedEstimate.quotationPrice.divide(areaM2, 2, RoundingMode.HALF_UP)
     } else BigDecimal.ZERO
 
-    val dynamicPricePerLinearMeter = if (perimeterMeters > 0) {
-      recalculatedEstimate.quotationPrice.divide(BigDecimal.valueOf(perimeterMeters), 2, RoundingMode.HALF_UP)
+    val dynamicPricePerLinearMeter = if (perimeterMeters > BigDecimal.ZERO) {
+      recalculatedEstimate.quotationPrice.divide(perimeterMeters, 2, RoundingMode.HALF_UP)
     } else BigDecimal.ZERO
 
-    val usdRate = BigDecimal("72.50")
+    val usdRate = exchangeRateUsdToAfn.takeIf { it > BigDecimal.ZERO } ?: BigDecimal("72.50")
     val totalUsd = recalculatedEstimate.quotationPrice.divide(usdRate, 2, RoundingMode.HALF_UP)
     val calculatedProfit = recalculatedEstimate.quotationPrice.subtract(recalculatedEstimate.totalBaseCost)
 
@@ -601,7 +609,7 @@ fun WindowDesignerScreen(
           Column {
             Text("محاسبه دقیق قیمت تمام‌شده و سود (BOM)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-              "مساحت: ${CurrencyHelper.toPersianDigits(String.format(Locale.US, "%.2f", areaM2))} m² | محیط: ${CurrencyHelper.toPersianDigits(String.format(Locale.US, "%.2f", perimeterMeters))} متر",
+              "مساحت: ${CurrencyHelper.toPersianDigits(areaM2.setScale(2, RoundingMode.HALF_UP).toPlainString())} m² | محیط: ${CurrencyHelper.toPersianDigits(perimeterMeters.setScale(2, RoundingMode.HALF_UP).toPlainString())} متر",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )

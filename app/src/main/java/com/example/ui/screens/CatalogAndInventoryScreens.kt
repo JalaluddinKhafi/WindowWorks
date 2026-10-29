@@ -14,10 +14,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.core.CurrencyHelper
 import com.example.core.SecurityHelper
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.example.data.local.AccessoryEntity
 import com.example.data.local.GlassEntity
-import com.example.data.local.InventoryMovementEntity
 import com.example.data.local.ProfileEntity
+import com.example.domain.model.InventoryMovementModel
+import com.example.domain.model.MaterialProductModel
+import com.example.domain.model.ProjectModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,21 +30,30 @@ fun CatalogScreen(
   profiles: List<ProfileEntity>,
   glasses: List<GlassEntity>,
   accessories: List<AccessoryEntity>,
+  canEdit: Boolean = true,
   onAddProfile: (ProfileEntity) -> Unit,
   onAddGlass: (GlassEntity) -> Unit,
   onAddAccessory: (AccessoryEntity) -> Unit
 ) {
   var selectedTab by remember { mutableIntStateOf(0) } // 0 = Profiles, 1 = Glasses, 2 = Accessories
   var showAddProfileDialog by remember { mutableStateOf(false) }
+  var showAddGlassDialog by remember { mutableStateOf(false) }
+  var showAddAccessoryDialog by remember { mutableStateOf(false) }
 
   Scaffold(
     floatingActionButton = {
-      if (selectedTab == 0) {
+      if (canEdit) {
         FloatingActionButton(
-          onClick = { showAddProfileDialog = true },
+          onClick = {
+            when (selectedTab) {
+              0 -> showAddProfileDialog = true
+              1 -> showAddGlassDialog = true
+              else -> showAddAccessoryDialog = true
+            }
+          },
           containerColor = MaterialTheme.colorScheme.primary
         ) {
-          Icon(Icons.Default.Add, contentDescription = "افزودن مقطع پروفیل", tint = MaterialTheme.colorScheme.onPrimary)
+          Icon(Icons.Default.Add, contentDescription = "افزودن به کاتالوگ", tint = MaterialTheme.colorScheme.onPrimary)
         }
       }
     }
@@ -187,6 +201,162 @@ fun CatalogScreen(
       }
     )
   }
+
+  if (showAddGlassDialog) {
+    AddGlassDialog(
+      onDismiss = { showAddGlassDialog = false },
+      onConfirm = { g ->
+        onAddGlass(g)
+        showAddGlassDialog = false
+      }
+    )
+  }
+
+  if (showAddAccessoryDialog) {
+    AddAccessoryDialog(
+      onDismiss = { showAddAccessoryDialog = false },
+      onConfirm = { a ->
+        onAddAccessory(a)
+        showAddAccessoryDialog = false
+      }
+    )
+  }
+}
+
+@Composable
+fun AddGlassDialog(
+  onDismiss: () -> Unit,
+  onConfirm: (GlassEntity) -> Unit
+) {
+  var title by remember { mutableStateOf("") }
+  var glazingType by remember { mutableStateOf("دوجداره") }
+  var thickness by remember { mutableStateOf("20") }
+  var tint by remember { mutableStateOf("ساده شفاف") }
+  var price by remember { mutableStateOf("650.00") }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("افزودن نوع شیشه به کاتالوگ") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+          value = title,
+          onValueChange = { title = it },
+          label = { Text("عنوان شیشه (مثلاً دوجداره ۴+۱۶+۴) *") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth()
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          OutlinedTextField(
+            value = thickness,
+            onValueChange = { thickness = it },
+            label = { Text("ضخامت کل (mm)") },
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+          )
+          OutlinedTextField(
+            value = tint,
+            onValueChange = { tint = it },
+            label = { Text("رنگ / نوع") },
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+          )
+        }
+        OutlinedTextField(
+          value = price,
+          onValueChange = { price = it },
+          label = { Text("قیمت خرید هر مترمربع (افغانی) *") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth()
+        )
+      }
+    },
+    confirmButton = {
+      Button(
+        enabled = title.isNotBlank() && CurrencyHelper.parseAmount(price) > java.math.BigDecimal.ZERO,
+        onClick = {
+          onConfirm(
+            GlassEntity(
+              id = SecurityHelper.generateUuid(),
+              title = title.trim(),
+              glazingType = glazingType,
+              thicknessMm = CurrencyHelper.parseAmount(thickness).toInt().coerceAtLeast(1),
+              tint = tint.trim(),
+              pricePerM2 = CurrencyHelper.parseAmount(price).toPlainString()
+            )
+          )
+        }
+      ) { Text("ذخیره در کاتالوگ") }
+    },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
+  )
+}
+
+@Composable
+fun AddAccessoryDialog(
+  onDismiss: () -> Unit,
+  onConfirm: (AccessoryEntity) -> Unit
+) {
+  var name by remember { mutableStateOf("") }
+  var category by remember { mutableStateOf("دستگیره") }
+  var unit by remember { mutableStateOf("عدد") }
+  var price by remember { mutableStateOf("150.00") }
+
+  val categories = listOf("دستگیره", "لولا", "قفل", "غلطک", "لاستیک", "پیچ", "گالوانیزه", "اتصالات", "سایر")
+  val units = listOf("عدد", "دست", "متر", "بسته", "شاخه")
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("افزودن یراق‌آلات به کاتالوگ") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+          value = name,
+          onValueChange = { name = it },
+          label = { Text("نام کالا *") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth()
+        )
+        Text("دسته:", style = MaterialTheme.typography.labelMedium)
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          categories.forEach { c ->
+            FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c, style = MaterialTheme.typography.labelSmall) })
+          }
+        }
+        Text("واحد:", style = MaterialTheme.typography.labelMedium)
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          units.forEach { u ->
+            FilterChip(selected = unit == u, onClick = { unit = u }, label = { Text(u, style = MaterialTheme.typography.labelSmall) })
+          }
+        }
+        OutlinedTextField(
+          value = price,
+          onValueChange = { price = it },
+          label = { Text("قیمت خرید هر $unit (افغانی) *") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth()
+        )
+      }
+    },
+    confirmButton = {
+      Button(
+        enabled = name.isNotBlank() && CurrencyHelper.parseAmount(price) > java.math.BigDecimal.ZERO,
+        onClick = {
+          onConfirm(
+            AccessoryEntity(
+              id = SecurityHelper.generateUuid(),
+              code = "ACC-${SecurityHelper.generateUuid().take(6).uppercase()}",
+              name = name.trim(),
+              category = category,
+              unit = unit,
+              unitPrice = CurrencyHelper.parseAmount(price).toPlainString()
+            )
+          )
+        }
+      ) { Text("ذخیره در کاتالوگ") }
+    },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
+  )
 }
 
 @Composable
@@ -256,8 +426,11 @@ fun AddProfileDialog(
 
 @Composable
 fun InventoryScreen(
-  movements: List<InventoryMovementEntity>,
-  onRecordMovement: (InventoryMovementEntity) -> Unit
+  movements: List<InventoryMovementModel>,
+  products: List<MaterialProductModel>,
+  projects: List<ProjectModel> = emptyList(),
+  canRecord: Boolean = true,
+  onRecordMovement: (InventoryMovementModel) -> Unit
 ) {
   var showMovementDialog by remember { mutableStateOf(false) }
 
@@ -296,7 +469,52 @@ fun InventoryScreen(
         }
       }
 
+      // Current stock levels + low-stock warning
       item {
+        Text("موجودی فعلی کالاها:", style = MaterialTheme.typography.titleSmall)
+      }
+
+      if (products.isEmpty()) {
+        item {
+          Box(modifier = Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+            Text("برای کنترل انبار ابتدا در بخش «اجناس و مواد» کالا ثبت کنید.", color = MaterialTheme.colorScheme.outline)
+          }
+        }
+      } else {
+        items(products, key = { it.id }) { p ->
+          val stock = p.stockQty
+          val isLow = stock <= p.minStockLevel
+          Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+              containerColor = if (isLow) Color(0xFFFFF7ED) else MaterialTheme.colorScheme.surface
+            )
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth().padding(12.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(p.name, style = MaterialTheme.typography.titleSmall)
+                Text(
+                  "کد: ${p.code} | ${p.category}" + if (isLow) " | ⚠ زیر حد موجودی" else "",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = if (isLow) Color(0xFFB45309) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
+              Text(
+                "${CurrencyHelper.toPersianDigits(stock.stripTrailingZeros().toPlainString())} ${p.unit}",
+                style = MaterialTheme.typography.titleSmall,
+                color = if (isLow) Color(0xFFB45309) else MaterialTheme.colorScheme.primary
+              )
+            }
+          }
+        }
+      }
+
+      item {
+        Spacer(modifier = Modifier.height(6.dp))
         Text("گردش اخیر انبار (کاردکس ورود و خروج):", style = MaterialTheme.typography.titleSmall)
       }
 
@@ -307,8 +525,8 @@ fun InventoryScreen(
           }
         }
       } else {
-        items(movements) { m ->
-          val isEntry = m.movementType.contains("IN")
+        items(movements, key = { it.id }) { m ->
+          val isEntry = m.isInbound
           Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -323,12 +541,7 @@ fun InventoryScreen(
               Column(modifier = Modifier.weight(1f)) {
                 Text(m.materialName, style = MaterialTheme.typography.titleSmall)
                 Text(
-                  text = when (m.movementType) {
-                    "PURCHASE_IN" -> "ورود خرید از تامین‌کننده"
-                    "PROJECT_OUT" -> "مصرف در پروژه"
-                    "SCRAP_OUT" -> "ضایعات کارگاهی"
-                    else -> "تعدیل انبار"
-                  },
+                  text = InventoryMovementModel.titleFor(m.movementType),
                   style = MaterialTheme.typography.bodySmall,
                   color = if (isEntry) Color(0xFF059669) else Color(0xFFDC2626)
                 )
@@ -337,7 +550,7 @@ fun InventoryScreen(
                 }
               }
               Text(
-                text = "${if (isEntry) "+" else "-"}${CurrencyHelper.toPersianDigits(m.quantity)} ${m.unit}",
+                text = "${if (isEntry) "+" else "-"}${CurrencyHelper.toPersianDigits(m.quantity.stripTrailingZeros().toPlainString())} ${m.unit}",
                 style = MaterialTheme.typography.titleMedium,
                 color = if (isEntry) Color(0xFF059669) else Color(0xFFDC2626)
               )
@@ -350,6 +563,8 @@ fun InventoryScreen(
 
   if (showMovementDialog) {
     RecordMovementDialog(
+      products = products,
+      projects = projects,
       onDismiss = { showMovementDialog = false },
       onConfirm = { m ->
         onRecordMovement(m)
@@ -361,56 +576,92 @@ fun InventoryScreen(
 
 @Composable
 fun RecordMovementDialog(
+  products: List<MaterialProductModel>,
+  projects: List<ProjectModel> = emptyList(),
   onDismiss: () -> Unit,
-  onConfirm: (InventoryMovementEntity) -> Unit
+  onConfirm: (InventoryMovementModel) -> Unit
 ) {
-  var matName by remember { mutableStateOf("شاخه ۶ متری فریم وینتک") }
-  var qtyStr by remember { mutableStateOf("10") }
-  var unit by remember { mutableStateOf("شاخه") }
-  var movementType by remember { mutableStateOf("PURCHASE_IN") }
-  var notes by remember { mutableStateOf("ورود بار جدید کارخانه") }
+  var selectedProduct by remember { mutableStateOf(products.firstOrNull()) }
+  var qtyStr by remember { mutableStateOf("") }
+  var movementType by remember { mutableStateOf(InventoryMovementModel.TYPE_PURCHASE_IN) }
+  var selectedProjectId by remember { mutableStateOf<String?>(null) }
+  var notes by remember { mutableStateOf("") }
+  var error by remember { mutableStateOf<String?>(null) }
 
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text("ثبت حواله ورود یا خروج انبار") },
     text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(max = 480.dp)
+          .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+      ) {
+        if (products.isEmpty()) {
+          Text(
+            "هیچ کالایی در انبار تعریف نشده است. ابتدا از بخش «اجناس و مواد» کالا ثبت کنید.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+          )
+        }
+
+        Text("کالا:", style = MaterialTheme.typography.labelMedium)
+        Column {
+          products.forEach { p ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              RadioButton(
+                selected = selectedProduct?.id == p.id,
+                onClick = { selectedProduct = p }
+              )
+              Text(
+                "${p.name} (موجودی: ${p.stockQty.stripTrailingZeros().toPlainString()} ${p.unit})",
+                style = MaterialTheme.typography.bodySmall
+              )
+            }
+          }
+        }
+
+        Text("نوع حواله:", style = MaterialTheme.typography.labelMedium)
+        Row(
+          modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          listOf(
+            InventoryMovementModel.TYPE_PURCHASE_IN to "ورود خرید (+)",
+            InventoryMovementModel.TYPE_PROJECT_OUT to "خروج پروژه (-)",
+            InventoryMovementModel.TYPE_SCRAP_OUT to "ضایعات (-)"
+          ).forEach { (type, label) ->
+            FilterChip(
+              selected = movementType == type,
+              onClick = { movementType = type },
+              label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+            )
+          }
+        }
+
         OutlinedTextField(
-          value = matName,
-          onValueChange = { matName = it },
-          label = { Text("نام متریال / کالا *") },
+          value = qtyStr,
+          onValueChange = { qtyStr = it; error = null },
+          label = { Text("مقدار (${selectedProduct?.unit ?: "واحد"}) *") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth()
         )
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          FilterChip(
-            selected = movementType == "PURCHASE_IN",
-            onClick = { movementType = "PURCHASE_IN" },
-            label = { Text("ورود خرید (+)") }
-          )
-          FilterChip(
-            selected = movementType == "PROJECT_OUT",
-            onClick = { movementType = "PROJECT_OUT" },
-            label = { Text("خروج پروژه (-)") }
-          )
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedTextField(
-            value = qtyStr,
-            onValueChange = { qtyStr = it },
-            label = { Text("مقدار *") },
-            singleLine = true,
-            modifier = Modifier.weight(1f)
-          )
-          OutlinedTextField(
-            value = unit,
-            onValueChange = { unit = it },
-            label = { Text("واحد") },
-            singleLine = true,
-            modifier = Modifier.weight(1f)
-          )
+        if (movementType == InventoryMovementModel.TYPE_PROJECT_OUT) {
+          Text("مصرف در پروژه:", style = MaterialTheme.typography.labelMedium)
+          Column {
+            projects.forEach { p ->
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(
+                  selected = selectedProjectId == p.id,
+                  onClick = { selectedProjectId = p.id }
+                )
+                Text("${p.projectNumber} - ${p.title}", style = MaterialTheme.typography.bodySmall)
+              }
+            }
+          }
         }
 
         OutlinedTextField(
@@ -419,24 +670,40 @@ fun RecordMovementDialog(
           label = { Text("توضیحات و منبع حواله") },
           modifier = Modifier.fillMaxWidth()
         )
+
+        error?.let {
+          Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
       }
     },
     confirmButton = {
       Button(
+        enabled = selectedProduct != null,
         onClick = {
-          if (matName.isNotBlank() && qtyStr.isNotBlank()) {
-            onConfirm(
-              InventoryMovementEntity(
-                id = SecurityHelper.generateUuid(),
-                materialId = "mat_${matName.hashCode()}",
-                materialName = matName.trim(),
-                movementType = movementType,
-                quantity = qtyStr.trim(),
-                unit = unit.trim(),
-                notes = notes.trim()
-              )
-            )
+          val product = selectedProduct ?: return@Button
+          val qty = CurrencyHelper.parseAmount(qtyStr)
+          if (qty <= java.math.BigDecimal.ZERO) {
+            error = "مقدار باید بزرگتر از صفر باشد."
+            return@Button
           }
+          if (movementType != InventoryMovementModel.TYPE_PURCHASE_IN &&
+            qty > product.stockQty
+          ) {
+            error = "موجودی کافی نیست. موجودی فعلی: ${product.stockQty.stripTrailingZeros().toPlainString()} ${product.unit}"
+            return@Button
+          }
+          onConfirm(
+            InventoryMovementModel(
+              id = SecurityHelper.generateUuid(),
+              materialId = product.id,
+              materialName = product.name,
+              movementType = movementType,
+              quantity = qty,
+              unit = product.unit,
+              projectId = if (movementType == InventoryMovementModel.TYPE_PROJECT_OUT) selectedProjectId else null,
+              notes = notes.trim()
+            )
+          )
         }
       ) { Text("ثبت حواله") }
     },

@@ -28,17 +28,19 @@ import com.example.domain.model.WindowDesign
 @Composable
 fun CuttingPlanScreen(
   design: WindowDesign,
+  sawKerfMm: Int = CuttingOptimizer.DEFAULT_SAW_KERF_MM,
+  endTrimMm: Int = CuttingOptimizer.DEFAULT_END_TRIM_MM,
   onBack: () -> Unit
 ) {
   val context = LocalContext.current
   val mfg = remember(design) { ManufacturingCalculator.calculate(design) }
-  val optResult = remember(mfg) {
+  val optResult = remember(mfg, sawKerfMm, endTrimMm) {
     CuttingOptimizer.optimize(
       pieces = mfg.profileCuts,
       profileName = "${design.profileSystem} (${design.frameFinish.titlePersian})",
-      stockLengthMm = 6000,
-      sawKerfMm = 4,
-      endTrimMm = 20
+      stockLengthMm = CuttingOptimizer.DEFAULT_STOCK_LENGTH_MM,
+      sawKerfMm = sawKerfMm,
+      endTrimMm = endTrimMm
     )
   }
 
@@ -49,7 +51,7 @@ fun CuttingPlanScreen(
           Column {
             Text("نقشه و دستور بهینه‌سازی برش شاخه", style = MaterialTheme.typography.titleMedium)
             Text(
-              "${design.name} | شاخه‌های ۶ متری با احتساب ۴mm ضخامت تیغ‌اره",
+              "${design.name} | شاخه‌های ${CurrencyHelper.toPersianDigits(CuttingOptimizer.DEFAULT_STOCK_LENGTH_MM / 1000)} متری با احتساب ${CurrencyHelper.toPersianDigits(sawKerfMm)}mm تیغ‌اره و ${CurrencyHelper.toPersianDigits(endTrimMm)}mm سرشاخه",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )

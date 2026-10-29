@@ -1,8 +1,11 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,6 +23,7 @@ import com.example.domain.model.InvoiceModel
 import com.example.domain.model.PaymentModel
 import com.example.domain.model.ProjectModel
 import java.math.BigDecimal
+import java.math.RoundingMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,6 +33,9 @@ fun FinanceScreen(
   expenses: List<ExpenseModel>,
   projects: List<ProjectModel>,
   customers: List<CustomerModel>,
+  baseCurrency: String = "AFN",
+  exchangeRateUsdToAfn: BigDecimal = BigDecimal("72.50"),
+  canRecordPayments: Boolean = false,
   onRecordPayment: (PaymentModel) -> Unit,
   onRecordExpense: (ExpenseModel) -> Unit
 ) {
@@ -36,26 +43,32 @@ fun FinanceScreen(
   var showPaymentDialog by remember { mutableStateOf(false) }
   var showExpenseDialog by remember { mutableStateOf(false) }
 
-  val totalInvoiced = invoices.fold(BigDecimal.ZERO) { acc, inv -> acc.add(inv.grandTotal) }
-  val totalReceived = payments.fold(BigDecimal.ZERO) { acc, p -> acc.add(p.amount) }
-  val totalExpenses = expenses.fold(BigDecimal.ZERO) { acc, e -> acc.add(e.amount) }
+  // Every figure is normalised to AFN before summing so AFN and USD records mix correctly.
+  fun toAfn(amount: BigDecimal, currency: String): BigDecimal =
+    CurrencyHelper.convertCurrency(amount, currency, "AFN", exchangeRateUsdToAfn)
+
+  val totalInvoiced = invoices.fold(BigDecimal.ZERO) { acc, inv -> acc.add(toAfn(inv.grandTotal, inv.currency)) }
+  val totalReceived = payments.fold(BigDecimal.ZERO) { acc, p -> acc.add(toAfn(p.amount, p.currency)) }
+  val totalExpenses = expenses.fold(BigDecimal.ZERO) { acc, e -> acc.add(toAfn(e.amount, e.currency)) }
   val netCash = totalReceived.subtract(totalExpenses)
 
   Scaffold(
     floatingActionButton = {
-      if (selectedTab == 1) {
-        FloatingActionButton(
-          onClick = { showPaymentDialog = true },
-          containerColor = MaterialTheme.colorScheme.primary
-        ) {
-          Icon(Icons.Default.Add, contentDescription = "ثبت دریافت وجه", tint = MaterialTheme.colorScheme.onPrimary)
-        }
-      } else if (selectedTab == 2) {
-        FloatingActionButton(
-          onClick = { showExpenseDialog = true },
-          containerColor = Color(0xFFDC2626)
-        ) {
-          Icon(Icons.Default.Add, contentDescription = "ثبت هزینه جدید", tint = Color.White)
+      if (canRecordPayments) {
+        if (selectedTab == 1) {
+          FloatingActionButton(
+            onClick = { showPaymentDialog = true },
+            containerColor = MaterialTheme.colorScheme.primary
+          ) {
+            Icon(Icons.Default.Add, contentDescription = "ثبت دریافت وجه", tint = MaterialTheme.colorScheme.onPrimary)
+          }
+        } else if (selectedTab == 2) {
+          FloatingActionButton(
+            onClick = { showExpenseDialog = true },
+            containerColor = Color(0xFFDC2626)
+          ) {
+            Icon(Icons.Default.Add, contentDescription = "ثبت هزینه جدید", tint = Color.White)
+          }
         }
       }
     }
@@ -164,6 +177,7 @@ fun FinanceScreen(
     RecordPaymentDialog(
       projects = projects,
       customers = customers,
+      defaultExchangeRate = exchangeRateUsdToAfn,
       onDismiss = { showPaymentDialog = false },
       onConfirm = { p ->
         onRecordPayment(p)
@@ -290,11 +304,14 @@ fun ExpenseCard(expense: ExpenseModel) {
 fun RecordPaymentDialog(
   projects: List<ProjectModel>,
   customers: List<CustomerModel>,
+  defaultExchangeRate: BigDecimal = BigDecimal("72.50"),
   onDismiss: () -> Unit,
   onConfirm: (PaymentModel) -> Unit
 ) {
   var amountStr by remember { mutableStateOf("") }
   var selectedProjectId by remember { mutableStateOf(projects.firstOrNull()?.id ?: "") }
+  var paymentCurrency by remember { mutableStateOf(projects.firstOrNull()?.contractCurrency ?: "AFN") }
+  var rateStr by remember { mutableStateOf(defaultExchangeRate.toPlainString()) }
   var paymentMethod by remember { mutableStateOf("نقدی (Cash)") }
   var refNum by remember { mutableStateOf("") }
   var notes by remember { mutableStateOf("قسط مرحله‌ای قرارداد") }
@@ -307,30 +324,64 @@ fun RecordPaymentDialog(
     onDismissRequest = onDismiss,
     title = { Text("ثبت دریافت وجه / قسط جدید") },
     text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(max = 480.dp)
+          .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+      ) {
         if (error.isNotBlank()) {
           Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          FilterChip(
+            selected = paymentCurrency == "AFN",
+            onClick = { paymentCurrency = "AFN" },
+            label = { Text("افغانی AFN") }
+          )
+          FilterChip(
+            selected = paymentCurrency == "USD",
+            onClick = { paymentCurrency = "USD" },
+            label = { Text("دالر USD") }
+          )
         }
 
         OutlinedTextField(
           value = amountStr,
           onValueChange = { amountStr = it },
-          label = { Text("مبلغ دریافتی (افغانی) *") },
+          label = { Text("مبلغ دریافتی ($paymentCurrency) *") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth()
         )
 
-        Text("پروژه مربوطه:", style = MaterialTheme.typography.labelMedium)
-        projects.forEach { p ->
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
+        if (paymentCurrency == "USD") {
+          OutlinedTextField(
+            value = rateStr,
+            onValueChange = { rateStr = it },
+            label = { Text("نرخ تبدیل دالر به افغانی *") },
+            singleLine = true,
             modifier = Modifier.fillMaxWidth()
-          ) {
-            RadioButton(
-              selected = selectedProjectId == p.id,
-              onClick = { selectedProjectId = p.id }
-            )
-            Text("${p.title} (${p.projectNumber})", style = MaterialTheme.typography.bodyMedium)
+          )
+        }
+
+        Text("پروژه مربوطه:", style = MaterialTheme.typography.labelMedium)
+        Column {
+          projects.forEach { p ->
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              RadioButton(
+                selected = selectedProjectId == p.id,
+                onClick = {
+                  selectedProjectId = p.id
+                  paymentCurrency = p.contractCurrency
+                }
+              )
+              Text("${p.title} (${p.projectNumber})", style = MaterialTheme.typography.bodyMedium)
+            }
           }
         }
 
@@ -358,12 +409,19 @@ fun RecordPaymentDialog(
             error = "مبلغ معتبر نیست."
             return@Button
           }
+          val rate = if (paymentCurrency == "USD") CurrencyHelper.parseAmount(rateStr) else BigDecimal.ONE
+          if (paymentCurrency == "USD" && rate <= BigDecimal.ZERO) {
+            error = "نرخ تبدیل دالر معتبر نیست."
+            return@Button
+          }
           onConfirm(
             PaymentModel(
               id = SecurityHelper.generateUuid(),
               customerId = customerId,
               projectId = selectedProjectId,
               amount = amt,
+              currency = paymentCurrency,
+              exchangeRateToAfn = rate,
               paymentMethod = paymentMethod,
               referenceNumber = refNum.trim(),
               notes = notes.trim()
@@ -387,8 +445,19 @@ fun RecordExpenseDialog(
   var title by remember { mutableStateOf("") }
   var category by remember { mutableStateOf("مواد اولیه و ملزومات") }
   var amountStr by remember { mutableStateOf("") }
+  var expenseProjectId by remember { mutableStateOf<String?>(null) }
   var notes by remember { mutableStateOf("") }
   var error by remember { mutableStateOf("") }
+
+  val categories = listOf(
+    "مواد اولیه و ملزومات",
+    "دستمزد کارگری",
+    "کرایه حمل و نقل",
+    "اجاره کارگاه",
+    "برق و انرژی",
+    "تعمیر و نگهداری ماشین‌آلات",
+    "هزینه اداری و متفرقه"
+  )
 
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -412,6 +481,44 @@ fun RecordExpenseDialog(
           singleLine = true,
           modifier = Modifier.fillMaxWidth()
         )
+
+        Text("سرفصل هزینه:", style = MaterialTheme.typography.labelMedium)
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          categories.forEach { cat ->
+            FilterChip(
+              selected = category == cat,
+              onClick = { category = cat },
+              label = { Text(cat, style = MaterialTheme.typography.labelSmall) }
+            )
+          }
+        }
+
+        Text("انتساب به پروژه (اختیاری):", style = MaterialTheme.typography.labelMedium)
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          FilterChip(
+            selected = expenseProjectId == null,
+            onClick = { expenseProjectId = null },
+            label = { Text("هزینه عمومی کارگاه") }
+          )
+          projects.forEach { p ->
+            FilterChip(
+              selected = expenseProjectId == p.id,
+              onClick = { expenseProjectId = p.id },
+              label = { Text(p.projectNumber, style = MaterialTheme.typography.labelSmall) }
+            )
+          }
+        }
+
         OutlinedTextField(
           value = notes,
           onValueChange = { notes = it },
@@ -431,6 +538,7 @@ fun RecordExpenseDialog(
           onConfirm(
             ExpenseModel(
               id = SecurityHelper.generateUuid(),
+              projectId = expenseProjectId,
               title = title.trim(),
               category = category,
               amount = amt,
