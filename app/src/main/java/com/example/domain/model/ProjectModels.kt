@@ -1,5 +1,6 @@
 package com.example.domain.model
 
+import com.example.core.UserRole
 import java.math.BigDecimal
 
 enum class ProjectStatus(val code: String, val titlePersian: String) {
@@ -94,3 +95,60 @@ data class ExpenseModel(
   val expenseDate: Long = System.currentTimeMillis(),
   val notes: String = ""
 )
+
+data class InventoryMovementModel(
+  val id: String,
+  val materialId: String,
+  val materialName: String,
+  val movementType: String, // PURCHASE_IN, PROJECT_OUT, SCRAP_OUT, ADJUSTMENT
+  val quantity: BigDecimal,
+  val unit: String,
+  val projectId: String? = null,
+  val date: Long = System.currentTimeMillis(),
+  val notes: String = ""
+) {
+  val isInbound: Boolean
+    get() = movementType == TYPE_PURCHASE_IN || movementType == TYPE_ADJUSTMENT
+
+  val signedQuantity: BigDecimal
+    get() = if (isInbound) quantity else quantity.negate()
+
+  companion object {
+    const val TYPE_PURCHASE_IN = "PURCHASE_IN"
+    const val TYPE_PROJECT_OUT = "PROJECT_OUT"
+    const val TYPE_SCRAP_OUT = "SCRAP_OUT"
+    const val TYPE_ADJUSTMENT = "ADJUSTMENT"
+
+    fun titleFor(type: String): String = when (type) {
+      TYPE_PURCHASE_IN -> "ورود خرید از تامین‌کننده"
+      TYPE_PROJECT_OUT -> "مصرف در پروژه"
+      TYPE_SCRAP_OUT -> "ضایعات کارگاهی"
+      else -> "تعدیل انبار"
+    }
+  }
+}
+
+data class UserModel(
+  val id: String,
+  val username: String,
+  val fullName: String,
+  val role: UserRole,
+  val isActive: Boolean = true,
+  val createdAt: Long = System.currentTimeMillis()
+)
+
+data class AuditLogModel(
+  val id: Long,
+  val username: String,
+  val action: String,
+  val entityType: String,
+  val entityId: String,
+  val details: String,
+  val timestamp: Long
+)
+
+/** Result of a backup restore attempt. */
+sealed interface RestoreResult {
+  data class Success(val summary: String) : RestoreResult
+  data class Failure(val message: String) : RestoreResult
+}
