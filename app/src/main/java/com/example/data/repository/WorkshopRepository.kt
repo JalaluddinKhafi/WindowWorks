@@ -1,24 +1,288 @@
 package com.example.data.repository
 
+import com.example.core.AppSettings
 import com.example.core.CurrencyHelper
 import com.example.core.SecurityHelper
+import com.example.core.UserRole
+import com.example.data.backup.BackupManager
 import com.example.data.local.*
 import com.example.domain.model.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigDecimal
+import java.math.RoundingMode
 
 class WorkshopRepository(private val dao: AppDao) {
 
-  // Current session user info
-  var currentUserId: String = "user_admin"
-  var currentUsername: String = "admin"
-  var currentUserRole: String = "OWNER_ADMIN"
+  // ---------------------------------------------------------------------------------------------
+  // Session
+  // ---------------------------------------------------------------------------------------------
 
-  // Customers
-  fun getAllCustomers(): Flow<List<CustomerModel>> = dao.getAllCustomers().map { entities ->
+  /** Null until somebody logs in; every permission check goes through [currentRole]. */
+  var currentUserId: String? = null
+    private set
+  var currentUsername: String = ""
+    private set
+  var currentFullName: String = ""
+    private set
+  var currentRole: UserRole = UserRole.READ_ONLY
+    private set
+  var mustChangePassword: Boolean = false
+    private set
+
+  val isSignedIn: Boolean get() = currentUserId != null
+
+  private val _sessionState = MutableStateFlow(0L)
+
+  /** Emits on every login / logout / password / role change so the UI can recompose. */
+  val sessionState: StateFlow<Long> = _sessionState.asStateFlow()
+
+  private fun notifySessionChanged() {
+    _sessionState.value = _sessionState.value + 1
+  }
+
+  suspend fun login(username: String, password: String): String? {
+    val user = dao.getUserByUsername(username.trim())
+      ?: return "نام کاربری یا رمز عبور اشتباه است."
+    if (!user.isActive) return "حساب کاربری غیرفعال شده است."
+    if (!SecurityHelper.verifyPassword(password, user.salt, user.passwordHash)) {
+      return "نام کاربری یا رمز عبور اشتباه است."
+    }
+
+    // Transparently upgrade legacy SHA-256 hashes to PBKDF2 on a successful login.
+    if (SecurityHelper.needsRehash(user.passwordHash)) {
+      val salt = SecurityHelper.generateSalt()
+      dao.updateUser(
+        user.copy(salt = salt, passwordHash = SecurityHelper.hashPassword(password, salt))
+      )
+    }
+
+    applySession(user)
+    return null
+  }
+
+  suspend fun logout() {
+    currentUserId = null
+    currentUsername = ""
+    currentFullName = ""
+    currentRole = UserRole.READ_ONLY
+    mustChangePassword = false
+    dao.setSetting(SettingEntity(AppSettings.KEY_LAST_USER_ID, ""))
+    notifySessionChanged()
+  }
+
+  /** Used by the backup restore flow to re-apply the signed-in account afterwards. */
+  suspend fun reloadSession() {
+    val id = currentUserId ?: return
+    val user = userEntityById(id)
+    if (user != null && user.isActive) applySession(user) else logout()
+  }
+
+  /** Restores the previously signed-in user after an app restart. */
+  suspend fun restoreSession() {
+    val id = dao.getSetting(AppSettings.KEY_LAST_USER_ID)
+    if (id.isNullOrBlank()) {
+      logout()
+      return
+    }
+    val user = userEntityById(id)
+    if (user != null && user.isActive) applySession(user) else logout()
+  }
+
+  private suspend fun userEntityById(id: String): UserEntity? =
+    dao.selectAllUsers().find { it.id == id }
+
+  private suspend fun applySession(user: UserEntity) {
+    currentUserId = user.id
+    currentUsername = user.username
+    currentFullName = user.fullName
+    currentRole = UserRole.fromCode(user.role)
+    // The bootstrap admin must replace the default password; the flag lives in app_settings.
+    mustChangePassword = dao.getSetting(AppSettings.KEY_FORCE_PASSWORD_CHANGE) == "true" &&
+      user.role == UserRole.OWNER_ADMIN.code
+    dao.setSetting(SettingEntity(AppSettings.KEY_LAST_USER_ID, user.id))
+    notifySessionChanged()
+  }
+
+  /** Changes the password of the signed-in user. Returns an error message or null on success. */
+  suspend fun changePassword(oldPassword: String, newPassword: String): String? {
+    val userId = currentUserId ?: return "ابتدا وارد حساب خود شوید."
+    if (newPassword.length < 6) return "رمز عبور جدید باید حداقل ۶ کاراکتر باشد."
+    val user = userEntityById(userId) ?: return "کاربر یافت نشد."
+    if (!SecurityHelper.verifyPassword(oldPassword, user.salt, user.passwordHash)) {
+      return "رمز عبور فعلی درست نیست."
+    }
+    val salt = SecurityHelper.generateSalt()
+    dao.updateUser(
+      user.copy(
+        salt = salt,
+        passwordHash = SecurityHelper.hashPassword(newPassword, salt),
+        isActive = true
+      )
+    )
+    dao.setSetting(SettingEntity(AppSettings.KEY_FORCE_PASSWORD_CHANGE, "false"))
+    applySession(user)
+    audit("CHANGE_PASSWORD", "User", userId, "تغییر رمز عبور کاربر ${user.username}")
+    return null
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Users & audit
+  // ---------------------------------------------------------------------------------------------
+
+  fun getAllUsers(): Flow<List<UserModel>> = dao.getAllUsersIncludingInactive().map { users ->
+    users.map {
+      UserModel(
+        id = it.id,
+        username = it.username,
+        fullName = it.fullName,
+        role = UserRole.fromCode(it.role),
+        isActive = it.isActive,
+        createdAt = it.createdAt
+      )
+    }
+  }
+
+  fun getRecentAuditLogs(): Flow<List<AuditLogModel>> = dao.getRecentAuditLogs().map { logs ->
+    logs.map {
+      AuditLogModel(
+        id = it.id,
+        username = it.username,
+        action = it.action,
+        entityType = it.entityType,
+        entityId = it.entityId,
+        details = it.details,
+        timestamp = it.timestamp
+      )
+    }
+  }
+
+  /** Creates a user. [password] is only required for new accounts. */
+  suspend fun saveUser(user: UserModel, password: String?): String? {
+    if (!currentRole.canManageUsers()) return "شما اجازه مدیریت کاربران را ندارید."
+    if (user.username.isBlank()) return "نام کاربری الزامی است."
+    val existing = dao.getUserByUsername(user.username.trim())
+    if (existing != null && existing.id != user.id) return "این نام کاربری قبلاً ثبت شده است."
+
+    val current = userEntityById(user.id)
+    if (current == null) {
+      if (password.isNullOrBlank() || password.length < 6) {
+        return "برای کاربر جدید رمز عبور حداقل ۶ کاراکتری لازم است."
+      }
+      val salt = SecurityHelper.generateSalt()
+      dao.insertUser(
+        UserEntity(
+          id = user.id,
+          username = user.username.trim(),
+          fullName = user.fullName.trim(),
+          passwordHash = SecurityHelper.hashPassword(password, salt),
+          salt = salt,
+          role = user.role.code,
+          isActive = user.isActive
+        )
+      )
+      audit("CREATE_USER", "User", user.id, "ایجاد کاربر ${user.username} با نقش ${user.role.titlePersian}")
+    } else {
+      if (current.id == currentUserId && current.role == UserRole.OWNER_ADMIN.code &&
+        user.role != UserRole.OWNER_ADMIN
+      ) {
+        return "نمی‌توانید نقش حساب کاربری خودتان را تنزل دهید."
+      }
+      val newSalt = if (password.isNullOrBlank()) current.salt else SecurityHelper.generateSalt()
+      val newHash = if (password.isNullOrBlank()) current.passwordHash
+      else SecurityHelper.hashPassword(password, newSalt)
+      dao.updateUser(
+        current.copy(
+          username = user.username.trim(),
+          fullName = user.fullName.trim(),
+          role = user.role.code,
+          isActive = user.isActive,
+          salt = newSalt,
+          passwordHash = newHash
+        )
+      )
+      audit("UPDATE_USER", "User", user.id, "ویرایش کاربر ${user.username}")
+    }
+    return null
+  }
+
+  suspend fun deleteUser(userId: String): String? {
+    if (!currentRole.canManageUsers()) return "شما اجازه حذف کاربر را ندارید."
+    if (userId == currentUserId) return "حساب کاربری جاری قابل حذف نیست."
+    val target = userEntityById(userId) ?: return null
+    val admins = dao.selectAllUsers().filter { it.role == UserRole.OWNER_ADMIN.code && it.isActive }
+    if (target.role == UserRole.OWNER_ADMIN.code && admins.size <= 1) {
+      return "حداقل یک مدیر کارگاه باید باقی بماند."
+    }
+    dao.deleteUser(userId)
+    audit("DELETE_USER", "User", userId, "حذف کاربر ${target.username}")
+    return null
+  }
+
+  private suspend fun audit(action: String, entityType: String, entityId: String, details: String) {
+    dao.insertAudit(
+      AuditLogEntity(
+        username = currentUsername.ifBlank { "system" },
+        action = action,
+        entityType = entityType,
+        entityId = entityId,
+        details = details
+      )
+    )
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Settings
+  // ---------------------------------------------------------------------------------------------
+
+  fun getSettings(): Flow<AppSettings> = dao.getAllSettings().map { list ->
+    AppSettings.fromMap(list.associate { it.key to it.value })
+  }
+
+  suspend fun saveSettings(settings: AppSettings): String? {
+    if (!currentRole.canEditCatalogAndPrices()) return "شما اجازه تغییر تنظیمات کارگاه را ندارید."
+    if (settings.exchangeRateUsdToAfn <= BigDecimal.ZERO) {
+      return "نرخ برابری دالر باید بزرگتر از صفر باشد."
+    }
+    AppSettings.toMap(settings).forEach { (key, value) ->
+      dao.setSetting(SettingEntity(key, value))
+    }
+    audit("SAVE_SETTINGS", "Settings", "app", "به‌روزرسانی تنظیمات کارگاه")
+    return null
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Backup & restore
+  // ---------------------------------------------------------------------------------------------
+
+  suspend fun exportBackupJson(): String {
+    return BackupManager.export(dao)
+  }
+
+  suspend fun restoreBackupJson(json: String): RestoreResult {
+    if (!currentRole.canExportOrBackup()) {
+      return RestoreResult.Failure("فقط مدیر کارگاه اجازه بازیابی اطلاعات را دارد.")
+    }
+    return try {
+      val snapshot = BackupManager.parse(json)
+      val summary = BackupManager.restore(dao, snapshot, currentUserId)
+      // The signed-in account may have been replaced by the backup contents.
+      reloadSession()
+      RestoreResult.Success(summary)
+    } catch (e: BackupManager.BackupException) {
+      RestoreResult.Failure(e.message ?: "فایل پشتیبان معتبر نیست.")
+    } catch (e: Exception) {
+      RestoreResult.Failure("خطا در بازیابی اطلاعات: ${e.message ?: "نامشخص"}")
+    }
+  }
+
+  // Customers. Deactivated customers are still returned so history/backups stay consistent.
+  fun getAllCustomers(): Flow<List<CustomerModel>> = dao.getAllCustomersIncludingInactive().map { entities ->
     entities.map {
       CustomerModel(
         id = it.id,
@@ -34,6 +298,7 @@ class WorkshopRepository(private val dao: AppDao) {
   }
 
   suspend fun saveCustomer(customer: CustomerModel) {
+    if (!currentRole.canManageCustomers()) return
     dao.insertCustomer(
       CustomerEntity(
         id = customer.id,
@@ -92,6 +357,7 @@ class WorkshopRepository(private val dao: AppDao) {
   }
 
   suspend fun saveProject(project: ProjectModel) {
+    if (!currentRole.canManageProjects()) return
     dao.insertProject(
       ProjectEntity(
         id = project.id,
@@ -121,6 +387,8 @@ class WorkshopRepository(private val dao: AppDao) {
   }
 
   suspend fun deleteProject(id: String) {
+    if (!currentRole.canManageProjects()) return
+    dao.deleteItemsByProject(id)
     dao.deleteProject(id)
     dao.insertAudit(
       AuditLogEntity(
@@ -153,6 +421,7 @@ class WorkshopRepository(private val dao: AppDao) {
     }
 
   suspend fun saveProjectItem(item: ProjectItemModel) {
+    if (!currentRole.canManageProjects()) return
     dao.insertProjectItem(
       ProjectItemEntity(
         id = item.id,
@@ -180,6 +449,7 @@ class WorkshopRepository(private val dao: AppDao) {
   }
 
   suspend fun saveDesign(design: WindowDesign) {
+    if (!currentRole.canDesignWindows()) return
     val entity = serializeDesign(design)
     dao.insertDesign(entity)
     dao.insertAudit(
@@ -299,6 +569,7 @@ class WorkshopRepository(private val dao: AppDao) {
     }
 
   suspend fun saveInvoice(invoice: InvoiceModel) {
+    if (!currentRole.canCreateInvoices()) return
     dao.insertInvoice(
       InvoiceEntity(
         id = invoice.id,
@@ -345,49 +616,198 @@ class WorkshopRepository(private val dao: AppDao) {
       }
     }
 
-  suspend fun savePayment(payment: PaymentModel) {
-    dao.insertPayment(
-      PaymentEntity(
-        id = payment.id,
-        customerId = payment.customerId,
-        projectId = payment.projectId,
-        invoiceId = payment.invoiceId,
-        amount = payment.amount.toPlainString(),
-        currency = payment.currency,
-        exchangeRateToAfn = payment.exchangeRateToAfn.toPlainString(),
-        paymentMethod = payment.paymentMethod,
-        referenceNumber = payment.referenceNumber,
-        paymentDate = payment.paymentDate,
-        notes = payment.notes
-      )
-    )
+  // ---------------------------------------------------------------------------------------------
+  // Catalog: glass & accessories are editable from the catalog screen
+  // ---------------------------------------------------------------------------------------------
 
-    // Automatically recalculate project paid amount and balance
-    val projectEntity = dao.getProjectById(payment.projectId)
-    if (projectEntity != null) {
-      val currentPaid = CurrencyHelper.parseAmount(projectEntity.totalPaidAmount)
-      val newPaid = currentPaid.add(payment.amount)
-      val contract = CurrencyHelper.parseAmount(projectEntity.totalContractAmount)
-      val newBalance = contract.subtract(newPaid).max(BigDecimal.ZERO)
+  /**
+   * Recomputes `totalPaidAmount` / `balanceDue` for a project from its payments.
+   * Payments in another currency are converted with the rate stored on each payment.
+   */
+  suspend fun recalculateProjectBalance(projectId: String) {
+    val projectEntity = dao.getProjectById(projectId) ?: return
+    val contractCurrency = projectEntity.contractCurrency.ifBlank { CurrencyHelper.CURRENCY_AFN }
 
-      dao.updateProject(
-        projectEntity.copy(
-          totalPaidAmount = newPaid.toPlainString(),
-          balanceDue = newBalance.toPlainString()
-        )
-      )
-    }
+    var paidInContractCurrency = BigDecimal.ZERO
+    dao.selectAllPayments()
+      .filter { it.projectId == projectId }
+      .forEach { p ->
+        val amount = CurrencyHelper.parseAmount(p.amount)
+        val rate = CurrencyHelper.parseAmount(p.exchangeRateToAfn)
+          .takeIf { it > BigDecimal.ZERO } ?: BigDecimal.ONE
+        // payment.currency -> AFN -> contractCurrency
+        val inAfn = if (p.currency.equals(CurrencyHelper.CURRENCY_USD, ignoreCase = true)) {
+          amount.multiply(rate)
+        } else {
+          amount
+        }
+        val inContract = if (contractCurrency.equals(CurrencyHelper.CURRENCY_USD, ignoreCase = true)) {
+          if (rate > BigDecimal.ZERO) inAfn.divide(rate, 2, RoundingMode.HALF_UP) else inAfn
+        } else {
+          inAfn
+        }
+        paidInContractCurrency = paidInContractCurrency.add(inContract)
+      }
 
-    dao.insertAudit(
-      AuditLogEntity(
-        username = currentUsername,
-        action = "RECEIVE_PAYMENT",
-        entityType = "Payment",
-        entityId = payment.id,
-        details = "دریافت وجه ${payment.amount} ${payment.currency} بابت پروژه"
+    val paid = paidInContractCurrency.setScale(2, RoundingMode.HALF_UP)
+    val contract = CurrencyHelper.parseAmount(projectEntity.totalContractAmount)
+    val balance = contract.subtract(paid).max(BigDecimal.ZERO)
+
+    dao.updateProject(
+      projectEntity.copy(
+        totalPaidAmount = paid.toPlainString(),
+        balanceDue = balance.toPlainString()
       )
     )
   }
+
+  // ---------------------------------------------------------------------------------------------
+  // Expenses
+  // ---------------------------------------------------------------------------------------------
+
+  fun getAllExpenses(): Flow<List<ExpenseModel>> = dao.getAllExpenses().map { list ->
+    list.map { it.toModel() }
+  }
+
+  suspend fun saveExpense(expense: ExpenseModel) {
+    if (!currentRole.canRecordPayments()) return
+    dao.insertExpense(
+      ExpenseEntity(
+        id = expense.id,
+        projectId = expense.projectId?.ifBlank { null },
+        title = expense.title,
+        category = expense.category,
+        amount = expense.amount.toPlainString(),
+        currency = expense.currency,
+        expenseDate = expense.expenseDate,
+        notes = expense.notes
+      )
+    )
+    audit("SAVE_EXPENSE", "Expense", expense.id, "ثبت هزینه ${expense.title} به مبلغ ${expense.amount} ${expense.currency}")
+  }
+
+  suspend fun deletePayment(paymentId: String) {
+    if (!currentRole.canRecordPayments()) return
+    val payment = dao.getPaymentById(paymentId) ?: return
+    dao.deletePayment(paymentId)
+    recalculateProjectBalance(payment.projectId)
+    audit("DELETE_PAYMENT", "Payment", paymentId, "حذف رسید دریافت وجه")
+  }
+
+  suspend fun deleteExpense(expenseId: String) {
+    if (!currentRole.canRecordPayments()) return
+    dao.deleteExpense(expenseId)
+    audit("DELETE_EXPENSE", "Expense", expenseId, "حذف سند هزینه")
+  }
+
+  private fun ExpenseEntity.toModel() = ExpenseModel(
+    id = id,
+    projectId = projectId,
+    title = title,
+    category = category,
+    amount = CurrencyHelper.parseAmount(amount),
+    currency = currency,
+    expenseDate = expenseDate,
+    notes = notes
+  )
+
+  // ---------------------------------------------------------------------------------------------
+  // Inventory
+  // ---------------------------------------------------------------------------------------------
+
+  fun getAllPayments(): Flow<List<PaymentModel>> = dao.getAllPayments().map { entities ->
+    entities.map {
+      PaymentModel(
+        id = it.id,
+        customerId = it.customerId,
+        projectId = it.projectId,
+        invoiceId = it.invoiceId,
+        amount = CurrencyHelper.parseAmount(it.amount),
+        currency = it.currency,
+        exchangeRateToAfn = CurrencyHelper.parseAmount(it.exchangeRateToAfn),
+        paymentMethod = it.paymentMethod,
+        referenceNumber = it.referenceNumber,
+        paymentDate = it.paymentDate,
+        notes = it.notes
+      )
+    }
+  }
+
+  fun getAllInvoices(): Flow<List<InvoiceModel>> = dao.getAllInvoices().map { entities ->
+    entities.map {
+      InvoiceModel(
+        id = it.id,
+        projectId = it.projectId,
+        invoiceNumber = it.invoiceNumber,
+        isFinalInvoice = it.isFinalInvoice,
+        currency = it.currency,
+        subtotal = CurrencyHelper.parseAmount(it.subtotal),
+        discountAmount = CurrencyHelper.parseAmount(it.discountAmount),
+        taxAmount = CurrencyHelper.parseAmount(it.taxAmount),
+        grandTotal = CurrencyHelper.parseAmount(it.grandTotal),
+        issueDate = it.issueDate,
+        isApproved = it.isApproved,
+        notes = it.notes
+      )
+    }
+  }
+
+  fun getInventoryMovements(): Flow<List<InventoryMovementModel>> =
+    dao.getAllInventoryMovements().map { list -> list.map { it.toModel() } }
+
+  /**
+   * Records an inventory movement and keeps the linked material's stock quantity in sync.
+   * A movement without a catalog material (free text) is still stored in the ledger.
+   */
+  suspend fun recordInventoryMovement(movement: InventoryMovementModel) {
+    if (!currentRole.canManageInventory()) return
+    if (movement.quantity <= BigDecimal.ZERO) return
+
+    dao.insertInventoryMovement(
+      InventoryMovementEntity(
+        id = movement.id,
+        materialId = movement.materialId,
+        materialName = movement.materialName,
+        movementType = movement.movementType,
+        quantity = movement.quantity.toPlainString(),
+        unit = movement.unit,
+        projectId = movement.projectId,
+        date = movement.date,
+        notes = movement.notes
+      )
+    )
+
+    val product = dao.getMaterialProductById(movement.materialId)
+    if (product != null) {
+      val currentQty = CurrencyHelper.parseAmount(product.stockQty)
+      val delta = if (movement.movementType == InventoryMovementModel.TYPE_PURCHASE_IN) {
+        movement.quantity
+      } else {
+        movement.quantity.negate()
+      }
+      val newQty = currentQty.add(delta).max(BigDecimal.ZERO)
+      dao.updateProductStock(product.id, newQty.toPlainString())
+    }
+
+    audit(
+      "INVENTORY_MOVEMENT",
+      "Inventory",
+      movement.id,
+      "${InventoryMovementModel.titleFor(movement.movementType)} - ${movement.materialName} (${movement.quantity} ${movement.unit})"
+    )
+  }
+
+  private fun InventoryMovementEntity.toModel() = InventoryMovementModel(
+    id = id,
+    materialId = materialId,
+    materialName = materialName,
+    movementType = movementType,
+    quantity = CurrencyHelper.parseAmount(quantity),
+    unit = unit,
+    projectId = projectId,
+    date = date,
+    notes = notes
+  )
 
   // Catalog
   fun getAllProfiles(): Flow<List<ProfileEntity>> = dao.getAllProfiles()
@@ -400,6 +820,7 @@ class WorkshopRepository(private val dao: AppDao) {
   }
 
   suspend fun saveMaterialProduct(product: MaterialProductModel) {
+    if (!currentRole.canEditCatalogAndPrices()) return
     dao.insertMaterialProduct(
       MaterialProductEntity(
         id = product.id,
@@ -436,7 +857,9 @@ class WorkshopRepository(private val dao: AppDao) {
   }
 
   suspend fun deleteMaterialProduct(id: String) {
+    if (!currentRole.canEditCatalogAndPrices()) return
     dao.deleteMaterialProduct(id)
+    audit("DELETE_PRODUCT", "MaterialProduct", id, "حذف کالا از کاتالوگ")
   }
 
   private fun mapProductEntityToModel(e: MaterialProductEntity): MaterialProductModel {
@@ -470,6 +893,7 @@ class WorkshopRepository(private val dao: AppDao) {
   }
 
   suspend fun saveCalculationSession(session: ProjectCalculationSession) {
+    if (!currentRole.canCreateInvoices()) return
     val itemsArr = JSONArray()
     for (item in session.items) {
       val obj = JSONObject().apply {
@@ -597,17 +1021,59 @@ class WorkshopRepository(private val dao: AppDao) {
     )
   }
 
-  // Full Database Backup Export to JSON string
-  suspend fun exportBackupJson(): String {
-    val root = JSONObject()
-    root.put("app", "WindowWorkshop")
-    root.put("schemaVersion", 1)
-    root.put("exportTimestamp", System.currentTimeMillis())
+  suspend fun savePayment(payment: PaymentModel): String? {
+    if (!currentRole.canRecordPayments()) return "شما اجازه ثبت دریافت وجه را ندارید."
+    if (payment.amount <= BigDecimal.ZERO) return "مبلغ دریافتی باید بزرگتر از صفر باشد."
 
-    // Users
-    val usersArr = JSONArray()
-    dao.getAllUsers() // handled through flow or query
-    root.put("status", "VALID_BACKUP")
-    return root.toString(2)
+    val rate = if (payment.currency.equals(CurrencyHelper.CURRENCY_USD, ignoreCase = true)) {
+      payment.exchangeRateToAfn.takeIf { it > BigDecimal.ZERO }
+        ?: return "نرخ تبدیل دالر باید معتبر باشد."
+    } else {
+      BigDecimal.ONE
+    }
+
+    dao.insertPayment(
+      PaymentEntity(
+        id = payment.id,
+        customerId = payment.customerId,
+        projectId = payment.projectId,
+        invoiceId = payment.invoiceId,
+        amount = payment.amount.toPlainString(),
+        currency = payment.currency,
+        exchangeRateToAfn = rate.toPlainString(),
+        paymentMethod = payment.paymentMethod,
+        referenceNumber = payment.referenceNumber,
+        paymentDate = payment.paymentDate,
+        notes = payment.notes
+      )
+    )
+
+    // Recalculate the project balance in the contract currency, converting foreign payments.
+    recalculateProjectBalance(payment.projectId)
+    audit("RECEIVE_PAYMENT", "Payment", payment.id, "دریافت وجه ${payment.amount} ${payment.currency} بابت پروژه")
+    return null
+  }
+
+  suspend fun saveProfile(profile: ProfileEntity) {
+    if (!currentRole.canEditCatalogAndPrices()) return
+    dao.insertProfile(profile)
+  }
+
+  suspend fun saveGlass(glass: GlassEntity) {
+    if (!currentRole.canEditCatalogAndPrices()) return
+    dao.insertGlass(glass)
+  }
+
+  suspend fun saveAccessory(accessory: AccessoryEntity) {
+    if (!currentRole.canEditCatalogAndPrices()) return
+    dao.insertAccessory(accessory)
+  }
+
+  /** Customer creation used by the customer list (generates code when empty). */
+  suspend fun createCustomerWithNextCode(customer: CustomerModel) {
+    val code = customer.code.ifBlank {
+      "CST-${(dao.selectAllCustomers().size + 101)}"
+    }
+    saveCustomer(customer.copy(code = code))
   }
 }

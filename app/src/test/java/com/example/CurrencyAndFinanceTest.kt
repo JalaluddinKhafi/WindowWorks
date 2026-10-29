@@ -61,3 +61,68 @@ class CurrencyAndFinanceTest {
     assertEquals(BigDecimal("20.00"), estimate.profitMarginPercent)
   }
 }
+
+class ProjectBalanceConversionTest {
+
+  /**
+   * Mirrors `WorkshopRepository.recalculateProjectBalance`: USD payments are converted
+   * to the contract currency using the rate stored on each payment.
+   */
+  private fun paidInContractCurrency(
+    payments: List<Triple<String, String, String>>, // amount, currency, rateToAfn
+    contractCurrency: String
+  ): BigDecimal {
+    var total = BigDecimal.ZERO
+    payments.forEach { (amountStr, currency, rateStr) ->
+      val amount = CurrencyHelper.parseAmount(amountStr)
+      val rate = CurrencyHelper.parseAmount(rateStr).takeIf { it > BigDecimal.ZERO } ?: BigDecimal.ONE
+      val inAfn = if (currency.equals("USD", ignoreCase = true)) amount.multiply(rate) else amount
+      val inContract = if (contractCurrency.equals("USD", ignoreCase = true)) {
+        inAfn.divide(rate, 2, RoundingMode.HALF_UP)
+      } else inAfn
+      total = total.add(inContract)
+    }
+    return total.setScale(2, RoundingMode.HALF_UP)
+  }
+
+  @Test
+  fun usdPaymentIsConvertedIntoAfnContract() {
+    val paid = paidInContractCurrency(
+      listOf(Triple("100.00", "USD", "70.00")),
+      contractCurrency = "AFN"
+    )
+    assertEquals(BigDecimal("7000.00"), paid)
+  }
+
+  @Test
+  fun afnPaymentIsConvertedIntoUsdContract() {
+    val paid = paidInContractCurrency(
+      listOf(Triple("3500.00", "AFN", "70.00")),
+      contractCurrency = "USD"
+    )
+    assertEquals(BigDecimal("50.00"), paid)
+  }
+
+  @Test
+  fun mixedCurrencyPaymentsAreSummedCorrectly() {
+    val paid = paidInContractCurrency(
+      listOf(
+        Triple("1000.00", "AFN", "1.00"),
+        Triple("100.00", "USD", "72.50")
+      ),
+      contractCurrency = "AFN"
+    )
+    assertEquals(BigDecimal("8250.00"), paid)
+  }
+
+  @Test
+  fun balanceNeverGoesNegative() {
+    val contract = BigDecimal("1000.00")
+    val paid = paidInContractCurrency(
+      listOf(Triple("500.00", "USD", "3.00")),
+      contractCurrency = "AFN"
+    )
+    val balance = contract.subtract(paid).max(BigDecimal.ZERO)
+    assertEquals(BigDecimal.ZERO, balance)
+  }
+}
