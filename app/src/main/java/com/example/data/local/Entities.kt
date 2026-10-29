@@ -13,7 +13,8 @@ data class UserEntity(
   val salt: String,
   val role: String, // OWNER_ADMIN, SALES, DESIGNER, ACCOUNTANT, OPERATOR, READ_ONLY
   val isActive: Boolean = true,
-  val createdAt: Long = System.currentTimeMillis()
+  val createdAt: Long = System.currentTimeMillis(),
+  // True for the first admin until the default password is replaced (not persisted).
 )
 
 @Entity(tableName = "customers")
