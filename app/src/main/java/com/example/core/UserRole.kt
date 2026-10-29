@@ -39,7 +39,9 @@ enum class UserRole(val code: String, val titlePersian: String, val descriptionP
   }
 
   fun canManageUsers(): Boolean = this == OWNER_ADMIN
-  fun canEditCatalogAndPrices(): Boolean = this == OWNER_ADMIN || this == ACCOUNTANT
+  fun canEditCatalogAndPrices(): Boolean = this == OWNER_ADMIN || this == ACCOUNTANT || this == DESIGNER
+  fun canManageCustomers(): Boolean = this != READ_ONLY
+  fun canManageProjects(): Boolean = this != READ_ONLY
   fun canDesignWindows(): Boolean = this == OWNER_ADMIN || this == DESIGNER || this == SALES
   fun canCreateInvoices(): Boolean = this == OWNER_ADMIN || this == SALES || this == ACCOUNTANT
   fun canApproveInvoices(): Boolean = this == OWNER_ADMIN || this == ACCOUNTANT

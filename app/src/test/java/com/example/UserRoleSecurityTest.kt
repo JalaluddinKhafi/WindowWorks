@@ -15,6 +15,21 @@ class UserRoleSecurityTest {
 
     assertTrue(SecurityHelper.verifyPassword(password, salt, hash))
     assertFalse(SecurityHelper.verifyPassword("wrongPassword", salt, hash))
+    assertTrue(hash.startsWith("pbkdf2\u0024"))
+    assertFalse(SecurityHelper.needsRehash(hash))
+  }
+
+  @Test
+  fun testLegacySha256HashStillVerifiesAndNeedsRehash() {
+    val password = "legacyPass"
+    val salt = "abcd1234"
+    val legacy = java.security.MessageDigest.getInstance("SHA-256")
+      .digest("$password:$salt".toByteArray())
+      .joinToString("") { "%02x".format(it) }
+
+    assertTrue(SecurityHelper.verifyPassword(password, salt, legacy))
+    assertFalse(SecurityHelper.verifyPassword("nope", salt, legacy))
+    assertTrue(SecurityHelper.needsRehash(legacy))
   }
 
   @Test
