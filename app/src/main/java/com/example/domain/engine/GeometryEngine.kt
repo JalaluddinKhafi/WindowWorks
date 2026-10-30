@@ -83,6 +83,7 @@ object GeometryEngine {
 
     val totalRatio = design.panels.sumOf { it.widthRatio.toDouble().coerceAtLeast(0.01) }.toFloat().coerceAtLeast(0.01f)
     val panelBoundsList = mutableListOf<PanelBounds>()
+    val dividers = mutableListOf<DividerBounds>()
 
     var currentX = frameFace
     design.panels.forEachIndexed { index, panel ->
@@ -107,6 +108,10 @@ object GeometryEngine {
       currentX += panelWidth + mullionFace
     }
 
+    panelBoundsList.dropLast(1).forEach { p ->
+      dividers.add(DividerBounds(p.xMm + p.widthMm, p.yMm, mullionFace, p.heightMm, SplitAxis.VERTICAL))
+    }
+
     return DesignGeometry(
       outerFrameWidthMm = design.widthMm.toFloat(),
       outerFrameHeightMm = design.heightMm.toFloat(),
@@ -115,7 +120,8 @@ object GeometryEngine {
       panels = panelBoundsList,
       transomPanel = transomBounds,
       validationErrors = errors,
-      validationWarnings = warnings
+      validationWarnings = warnings,
+      dividers = dividers
     )
   }
 }
