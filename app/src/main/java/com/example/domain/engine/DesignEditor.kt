@@ -43,4 +43,13 @@ object DesignEditor {
     }
     return design.copy(layoutRoot = visit(root(design)), panels = design.panels.filterNot { it.id == id })
   }
+
+  fun parent(design: WindowDesign, index: Int): LayoutNode? {
+    val id = design.panels.getOrNull(index)?.id ?: return null
+    fun find(n: LayoutNode): LayoutNode? = when {
+      n.first?.panelId == id || n.second?.panelId == id -> n
+      else -> n.first?.let(::find) ?: n.second?.let(::find)
+    }
+    return find(root(design))
+  }
 }
