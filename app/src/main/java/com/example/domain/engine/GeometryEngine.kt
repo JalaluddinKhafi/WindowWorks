@@ -81,12 +81,12 @@ object GeometryEngine {
     val totalMullionsWidth = (panelCount - 1) * mullionFace
     val availableWidth = (design.widthMm - (frameFace * 2)) - totalMullionsWidth
 
-    val totalRatio = design.panels.sumOf { it.widthRatio.toDouble() }.toFloat().coerceAtLeast(0.1f)
+    val totalRatio = design.panels.sumOf { it.widthRatio.toDouble().coerceAtLeast(0.01) }.toFloat().coerceAtLeast(0.01f)
     val panelBoundsList = mutableListOf<PanelBounds>()
 
     var currentX = frameFace
     design.panels.forEachIndexed { index, panel ->
-      val panelWidth = (panel.widthRatio / totalRatio) * availableWidth
+      val panelWidth = ((panel.widthRatio.coerceAtLeast(0.01f) / totalRatio) * availableWidth).coerceAtLeast(1f)
       val isSash = panel.openingType != com.example.domain.model.OpeningType.FIXED
 
       if (isSash && panelWidth < MIN_SASH_WIDTH) {
