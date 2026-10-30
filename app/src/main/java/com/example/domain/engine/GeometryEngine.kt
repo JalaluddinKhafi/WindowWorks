@@ -86,7 +86,7 @@ object GeometryEngine {
     val dividers = mutableListOf<DividerBounds>()
 
     var currentX = frameFace
-    design.panels.forEachIndexed { index, panel ->
+    if (design.layoutRoot == null) design.panels.forEachIndexed { index, panel ->
       val panelWidth = ((panel.widthRatio.coerceAtLeast(0.01f) / totalRatio) * availableWidth).coerceAtLeast(1f)
       val isSash = panel.openingType != com.example.domain.model.OpeningType.FIXED
 
@@ -108,8 +108,46 @@ object GeometryEngine {
       currentX += panelWidth + mullionFace
     }
 
-    panelBoundsList.dropLast(1).forEach { p ->
-      dividers.add(DividerBounds(p.xMm + p.widthMm, p.yMm, mullionFace, p.heightMm, SplitAxis.VERTICAL))
+    if (design.layoutRoot != null) {
+      panelBoundsList.clear()
+      fun layout(node: LayoutNode, x: Float, y: Float, w: Float, h: Float) {
+        if (node.panelId != null) {
+          val index = design.panels.indexOfFirst { it.id == node.panelId }
+          if (index < 0) { errors.add("ارجاع نامعتبر در تقسیم‌بندی طرح"); return }
+          panelBoundsList.add(PanelBounds(index, x, y, w.coerceAtLeast(1f), h.coerceAtLeast(1f),
+            design.panels[index].openingType != com.example.domain.model.OpeningType.FIXED))
+          return
+        }
+        val a = node.first
+        val b = node.second
+        if (a == null || b == null) { errors.add("تقسیم‌بندی ناقص است"); return }
+        val vertical = node.axis == SplitAxis.VERTICAL
+        val extent = (if (vertical) w else h) - mullionFace
+        val firstSize = extent * node.fraction.coerceIn(0.01f, 0.99f)
+        if (extent <= 0 || firstSize < 160 || extent - firstSize < 160) errors.add("بخش‌های طرح برای پروفیل و شیشه بیش از حد کوچک‌اند.")
+        if (vertical) {
+          dividers.add(DividerBounds(x + firstSize, y, mullionFace, h, node.axis))
+          layout(a, x, y, firstSize, h)
+          layout(b, x + firstSize + mullionFace, y, extent - firstSize, h)
+        } else {
+          dividers.add(DividerBounds(x, y + firstSize, w, mullionFace, node.axis))
+          layout(a, x, y, w, firstSize)
+          layout(b, x, y + firstSize + mullionFace, w, extent - firstSize)
+        }
+      }
+      layout(design.layoutRoot, frameFace, startY, (design.widthMm - frameFace * 2).coerceAtLeast(1f), availableHeight.coerceAtLeast(1f))
+      panelBoundsList.sortBy { it.panelIndex }
+      if (panelBoundsList.size != design.panels.size) errors.add("همهٔ لنگه‌ها در تقسیم‌بندی موجود نیستند.")
+    } else {
+      panelBoundsList.dropLast(1).forEach { p ->
+        dividers.add(DividerBounds(p.xMm + p.widthMm, p.yMm, mullionFace, p.heightMm, SplitAxis.VERTICAL))
+      }
+    }
+    if (design.hasTransom && !hasTransom) errors.add("ارتفاع کتیبه باید بین ۲۰۰ و ${design.heightMm - 300} میلی‌متر باشد.")
+    panelBoundsList.forEach { p ->
+      if (p.widthMm < 160 || p.heightMm < 160) errors.add("ابعاد قسمت ${p.panelIndex + 1} کافی نیست.")
+      if (p.isSash && (p.widthMm < MIN_SASH_WIDTH || p.heightMm < MIN_SASH_HEIGHT))
+        warnings.add("ابعاد بازشوی قسمت ${p.panelIndex + 1} نیاز به بررسی یراق دارد.")
     }
 
     return DesignGeometry(
@@ -120,7 +158,7 @@ object GeometryEngine {
       panels = panelBoundsList,
       transomPanel = transomBounds,
       validationErrors = errors,
-      validationWarnings = warnings,
+      validationWarnings = warnings.distinct(),
       dividers = dividers
     )
   }
