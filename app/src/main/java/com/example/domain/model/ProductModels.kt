@@ -63,7 +63,8 @@ data class PanelConfig(
   val customWidthMm: Int? = null,
   val customHeightMm: Int? = null,
   val handleModel: String = "دستگیره روتو استاندارد",
-  val lockPoints: Int = 1
+  val lockPoints: Int = 1,
+  val hasHandle: Boolean = true
 )
 
 enum class SplitAxis { VERTICAL, HORIZONTAL }
