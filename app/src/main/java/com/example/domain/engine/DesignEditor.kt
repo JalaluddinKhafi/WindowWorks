@@ -63,4 +63,17 @@ object DesignEditor {
     val candidate = explicit.copy(layoutRoot = visit(explicit.layoutRoot!!))
     return if (GeometryEngine.computeGeometry(candidate).panels.any { it.widthMm < 160 || it.heightMm < 160 }) design else candidate
   }
+
+  /** Available size on both sides of the selected panel's parent divider, excluding its face. */
+  fun parentAvailableMm(design: WindowDesign, index: Int): Float? {
+    val parent = parent(design, index) ?: return null
+    fun ids(n: LayoutNode): List<String> = n.panelId?.let { listOf(it) }
+      ?: (n.first?.let(::ids).orEmpty() + n.second?.let(::ids).orEmpty())
+    val descendants = ids(parent).toSet()
+    val bounds = GeometryEngine.computeGeometry(design).panels.filter { design.panels[it.panelIndex].id in descendants }
+    if (bounds.isEmpty()) return null
+    return (if (parent.axis == SplitAxis.VERTICAL)
+      bounds.maxOf { it.xMm + it.widthMm } - bounds.minOf { it.xMm }
+    else bounds.maxOf { it.yMm + it.heightMm } - bounds.minOf { it.yMm }) - 75f
+  }
 }
