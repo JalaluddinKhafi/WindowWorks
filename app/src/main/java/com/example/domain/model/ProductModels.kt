@@ -66,6 +66,17 @@ data class PanelConfig(
   val lockPoints: Int = 1
 )
 
+enum class SplitAxis { VERTICAL, HORIZONTAL }
+
+/** A leaf references a panel; a branch divides its opening, reserving a mullion. */
+data class LayoutNode(
+  val panelId: String? = null,
+  val axis: SplitAxis = SplitAxis.VERTICAL,
+  val fraction: Float = 0.5f,
+  val first: LayoutNode? = null,
+  val second: LayoutNode? = null
+)
+
 data class WindowDesign(
   val id: String,
   val name: String,
