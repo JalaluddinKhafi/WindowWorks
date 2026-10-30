@@ -99,7 +99,8 @@ data class WindowDesign(
   ),
   val isApproved: Boolean = false,
   val version: Int = 1,
-  val notes: String = ""
+  val notes: String = "",
+  val layoutRoot: LayoutNode? = null
 )
 
 data class CutPiece(
