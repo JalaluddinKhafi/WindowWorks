@@ -29,4 +29,18 @@ object DesignEditor {
     val candidate = design.copy(layoutRoot = visit(root(design)), panels = design.panels + newPanel)
     return if (GeometryEngine.computeGeometry(candidate).panels.any { it.widthMm < 160 || it.heightMm < 160 }) design else candidate
   }
+
+  /** Removing an opening expands its sibling into the parent opening. */
+  fun remove(design: WindowDesign, index: Int): WindowDesign {
+    if (design.panels.size <= 1) return design
+    val id = design.panels.getOrNull(index)?.id ?: return design
+    fun visit(node: LayoutNode): LayoutNode? {
+      if (node.panelId == id) return null
+      if (node.panelId != null) return node
+      val a = node.first?.let(::visit)
+      val b = node.second?.let(::visit)
+      return if (a == null) b else if (b == null) a else node.copy(first = a, second = b)
+    }
+    return design.copy(layoutRoot = visit(root(design)), panels = design.panels.filterNot { it.id == id })
+  }
 }
