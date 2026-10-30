@@ -52,4 +52,15 @@ object DesignEditor {
     }
     return find(root(design))
   }
+
+  fun resizeParent(design: WindowDesign, index: Int, fraction: Float): WindowDesign {
+    val target = parent(design, index) ?: return design
+    fun visit(n: LayoutNode): LayoutNode = if (n === target) n.copy(fraction = fraction.coerceIn(0.01f, 0.99f))
+      else n.copy(first = n.first?.let(::visit), second = n.second?.let(::visit))
+    // Use the same tree instance for reference-based replacement in legacy layouts.
+    val explicit = if (design.layoutRoot == null) design.copy(layoutRoot = root(design)) else design
+    if (design.layoutRoot == null) return resizeParent(explicit, index, fraction)
+    val candidate = explicit.copy(layoutRoot = visit(explicit.layoutRoot!!))
+    return if (GeometryEngine.computeGeometry(candidate).panels.any { it.widthMm < 160 || it.heightMm < 160 }) design else candidate
+  }
 }
