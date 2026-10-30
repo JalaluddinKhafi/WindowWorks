@@ -1,6 +1,8 @@
 package com.example.domain.engine
 
 import com.example.domain.model.WindowDesign
+import com.example.domain.model.LayoutNode
+import com.example.domain.model.SplitAxis
 
 data class PanelBounds(
   val panelIndex: Int,
@@ -20,8 +22,12 @@ data class DesignGeometry(
   val panels: List<PanelBounds>,
   val transomPanel: PanelBounds? = null,
   val validationErrors: List<String> = emptyList(),
-  val validationWarnings: List<String> = emptyList()
+  val validationWarnings: List<String> = emptyList(),
+  val dividers: List<DividerBounds> = emptyList()
 )
+
+data class DividerBounds(val xMm: Float, val yMm: Float, val widthMm: Float, val heightMm: Float,
+  val axis: SplitAxis)
 
 object GeometryEngine {
   private const val MIN_WINDOW_WIDTH = 400
