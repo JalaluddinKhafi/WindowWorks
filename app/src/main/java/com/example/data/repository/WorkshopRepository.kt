@@ -476,8 +476,16 @@ class WorkshopRepository(private val dao: AppDao) {
         put("sashFinish", p.sashFinish?.name ?: "")
         put("widthRatio", p.widthRatio.toDouble())
         put("handleModel", p.handleModel)
+        put("hasHandle", p.hasHandle)
+        put("handleX", p.handleX?.toDouble())
+        put("handleY", p.handleY.toDouble())
+        put("lockPoints", p.lockPoints)
       }
       arr.put(obj)
+    }
+    if (arr.length() > 0) {
+      design.layoutRoot?.let { arr.getJSONObject(0).put("layoutRoot", DesignLayoutCodec.encode(it)) }
+      arr.getJSONObject(0).put("designOpeningDirection", design.openingDirection.name)
     }
 
     return DesignEntity(
@@ -503,8 +511,14 @@ class WorkshopRepository(private val dao: AppDao) {
 
   private fun deserializeDesign(entity: DesignEntity): WindowDesign {
     val panels = mutableListOf<PanelConfig>()
+    var layoutRoot: LayoutNode? = null
+    var designDirection = OpeningDirection.INWARD
     try {
       val arr = JSONArray(entity.panelsJson)
+      if (arr.length() > 0) {
+        arr.getJSONObject(0).optJSONObject("layoutRoot")?.let { layoutRoot = DesignLayoutCodec.decode(it) }
+        designDirection = runCatching { OpeningDirection.valueOf(arr.getJSONObject(0).optString("designOpeningDirection", "INWARD")) }.getOrDefault(OpeningDirection.INWARD)
+      }
       for (i in 0 until arr.length()) {
         val obj = arr.getJSONObject(i)
         val sashFinStr = obj.optString("sashFinish", "")
@@ -518,11 +532,17 @@ class WorkshopRepository(private val dao: AppDao) {
             innerGlassTint = try { GlassTint.valueOf(obj.optString("innerGlassTint", "CLEAR")) } catch (_: Exception) { GlassTint.CLEAR },
             sashFinish = if (sashFinStr.isNotBlank()) try { FrameFinish.valueOf(sashFinStr) } catch (_: Exception) { null } else null,
             widthRatio = obj.optDouble("widthRatio", 1.0).toFloat(),
-            handleModel = obj.optString("handleModel", "دستگیره روتو استاندارد")
+            handleModel = obj.optString("handleModel", "دستگیره روتو استاندارد"),
+            hasHandle = obj.optBoolean("hasHandle", true),
+            handleX = if (obj.has("handleX") && !obj.isNull("handleX")) obj.optDouble("handleX", 0.5).toFloat().coerceIn(0f, 1f) else null,
+            handleY = obj.optDouble("handleY", 0.5).toFloat().coerceIn(0f, 1f),
+            lockPoints = obj.optInt("lockPoints", 1).coerceIn(1, 10)
           )
         )
       }
     } catch (_: Exception) {
+      panels.clear()
+      layoutRoot = null
       panels.add(PanelConfig("p1", OpeningType.FIXED))
     }
 
@@ -541,6 +561,8 @@ class WorkshopRepository(private val dao: AppDao) {
       hasTransom = entity.hasTransom,
       transomHeightMm = entity.transomHeightMm,
       panels = if (panels.isEmpty()) listOf(PanelConfig("p1")) else panels,
+      layoutRoot = layoutRoot,
+      openingDirection = designDirection,
       isApproved = entity.isApproved,
       version = entity.version,
       notes = entity.notes
