@@ -35,6 +35,9 @@ fun Elevation2DCanvas(
   design: WindowDesign,
   selectedPanelIndex: Int? = null,
   onSelectPanel: ((Int) -> Unit)? = null,
+  showGrid: Boolean = true,
+  showDimensions: Boolean = true,
+  onPlaceHandle: ((Int, Float, Float) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   val geom = GeometryEngine.computeGeometry(design)
@@ -75,7 +78,7 @@ fun Elevation2DCanvas(
           translationY = panOffset.y
         )
         .transformable(state = transformState)
-        .pointerInput(design, geom) {
+        .pointerInput(design, geom, onPlaceHandle) {
           detectTapGestures { tapOffset ->
             if (onSelectPanel == null) return@detectTapGestures
 
@@ -99,6 +102,8 @@ fun Elevation2DCanvas(
 
               if (tapOffset.x in pX..(pX + pW) && tapOffset.y in pY..(pY + pH)) {
                 onSelectPanel(idx)
+                if (p.isSash) onPlaceHandle?.invoke(idx, ((tapOffset.x - pX) / pW).coerceIn(0.02f, 0.98f),
+                  ((tapOffset.y - pY) / pH).coerceIn(0.02f, 0.98f))
               }
             }
           }
@@ -125,7 +130,7 @@ fun Elevation2DCanvas(
       val mullionFace = geom.mullionProfileFaceMm * fitScale
 
       // 1. Grid
-      drawGrid(canvasW, canvasH)
+      if (showGrid) drawGrid(canvasW, canvasH)
 
       // 2. Outer Frame Profile
       drawRect(
@@ -179,7 +184,7 @@ fun Elevation2DCanvas(
         if (p.isSash) {
           // Sash with distinct sashFinish color!
           val panelSashColor = panelConfig?.sashFinish?.let { Color(it.colorHex) } ?: sashColor
-          val sashFace = 65f * fitScale
+          val sashFace = minOf(65f, p.widthMm / 4, p.heightMm / 4) * fitScale
 
           drawRect(panelSashColor, Offset(pX, pY), Size(pW, pH), style = Stroke(width = sashFace))
           drawRect(frameBorderColor, Offset(pX, pY), Size(pW, pH), style = Stroke(width = 2f))
@@ -195,7 +200,13 @@ fun Elevation2DCanvas(
           drawOpeningSymbol(opening, pX, pY, pW, pH)
 
           // Handle
-          drawHandle(opening, pX, pY, pW, pH, sashFace)
+          if (panelConfig?.hasHandle != false) {
+            val defaultX = when (opening) { OpeningType.CASEMENT_LEFT -> 1f - sashFace / (2f * pW); OpeningType.TOP_HUNG -> 0.5f; else -> sashFace / (2f * pW) }
+            val hx = pX + pW * (panelConfig?.handleX ?: defaultX)
+            val hy = pY + pH * (panelConfig?.handleY ?: 0.5f)
+            drawCircle(Color(0xFF0F172A), 4f, Offset(hx, hy))
+            drawLine(Color(0xFF0F172A), Offset(hx, hy), Offset(hx, hy + 16f), 4f)
+          }
         } else {
           drawFixedSymbol(pX, pY, pW, pH)
         }
@@ -210,19 +221,18 @@ fun Elevation2DCanvas(
           )
         }
 
-        // Mullion divider between panels
-        if (idx < geom.panels.size - 1) {
-          val mX = pX + pW
-          drawRect(frameColor, Offset(mX, pY), Size(mullionFace, pH))
-          drawRect(frameBorderColor, Offset(mX, pY), Size(mullionFace, pH), style = Stroke(width = 1.5f))
-        }
-
         // Individual panel width dimension
-        drawPanelDimension(pX, pY + pH, pW, p.widthMm.toInt())
+        if (showDimensions) drawPanelDimension(pX, pY + pH - 30f, pW, p.widthMm.toInt())
       }
 
+      geom.dividers.forEach { d ->
+        val topLeft = Offset(originX + d.xMm * fitScale, originY + d.yMm * fitScale)
+        val extent = Size(d.widthMm * fitScale, d.heightMm * fitScale)
+        drawRect(frameColor, topLeft, extent)
+        drawRect(frameBorderColor, topLeft, extent, style = Stroke(1.5f))
+      }
       // 5. Overall Width & Height Dimensions
-      drawOverallDimensions(
+      if (showDimensions) drawOverallDimensions(
         originX = originX,
         originY = originY,
         widthPx = frameW,
@@ -360,26 +370,6 @@ private fun DrawScope.drawOpeningSymbol(
     }
     OpeningType.FIXED -> {}
   }
-}
-
-private fun DrawScope.drawHandle(
-  opening: OpeningType,
-  x: Float,
-  y: Float,
-  w: Float,
-  h: Float,
-  sashFace: Float
-) {
-  val handleColor = Color(0xFF0F172A)
-  val midY = y + (h / 2f)
-  val handleX = when (opening) {
-    OpeningType.CASEMENT_LEFT -> x + w - (sashFace / 2f)
-    OpeningType.CASEMENT_RIGHT, OpeningType.TILT_AND_TURN -> x + (sashFace / 2f)
-    else -> x + (w / 2f)
-  }
-
-  drawCircle(color = handleColor, radius = 6f, center = Offset(handleX, midY))
-  drawLine(color = handleColor, start = Offset(handleX, midY), end = Offset(handleX, midY + 28f), strokeWidth = 4.5f)
 }
 
 private fun DrawScope.drawFixedSymbol(x: Float, y: Float, w: Float, h: Float) {
