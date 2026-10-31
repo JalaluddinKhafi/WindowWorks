@@ -349,7 +349,8 @@ object ManufacturingCalculator {
           val handleKey = if (handleName == "دستگیره روتو استاندارد") "دستگیره استاندارد" else "دستگیره: $handleName"
           hardwarePcs[handleKey] = (hardwarePcs[handleKey] ?: 0) + 1
         }
-        hardwarePcs["لولا قابل رگلاژ"] = (hardwarePcs["لولا قابل رگلاژ"] ?: 0) + (if (sashH > 1500) 3 else 2)
+        if (opening != OpeningType.SLIDING_LEFT && opening != OpeningType.SLIDING_RIGHT)
+          hardwarePcs["لولا قابل رگلاژ"] = (hardwarePcs["لولا قابل رگلاژ"] ?: 0) + (if (sashH > 1500) 3 else 2)
         val espagnoletteType = when (opening) {
           OpeningType.TILT_AND_TURN -> "مکانیزم یراق کامل دوحالته"
           OpeningType.SLIDING_LEFT, OpeningType.SLIDING_RIGHT -> "قفل و غلطک کشویی بلبرینگی"
