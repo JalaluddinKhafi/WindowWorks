@@ -184,38 +184,14 @@ object ManufacturingCalculator {
       )
     }
 
-    // 3. Vertical Mullions between panels
-    val panelCount = geom.panels.size
-    if (panelCount > 1) {
-      val mullionHeight = geom.panels.first().heightMm.toInt() + (weld * 2)
-      profileCuts.add(
-        CutPiece(
-          id = "mullion_v",
-          profileName = "${design.profileSystem} - پروفیل مولیون (وادار)",
-          sectionType = "مولیون",
-          lengthMm = mullionHeight,
-          quantity = panelCount - 1,
-          angleStart = 90,
-          angleEnd = 90,
-          tag = "مولیون عمودی جداکننده"
-        )
-      )
-      if (isUpvc) {
-        reinforcementCuts.add(
-          CutPiece(
-            id = "rf_mullion",
-            profileName = "گالوانیزه قوطی مولیون",
-            sectionType = "گالوانیزه",
-            lengthMm = (mullionHeight - 40).coerceAtLeast(100),
-            quantity = panelCount - 1,
-            angleStart = 90,
-            angleEnd = 90,
-            tag = "گالوانیزه مولیون میانی"
-          )
-        )
-      }
+    // Dividers are shared with both renderers, including nested horizontal transoms.
+    geom.dividers.forEachIndexed { index, divider ->
+      val length = (if (divider.axis == com.example.domain.model.SplitAxis.VERTICAL) divider.heightMm else divider.widthMm).toInt() + weld * 2
+      profileCuts.add(CutPiece("divider_$index", "${design.profileSystem} - پروفیل مولیون (وادار)",
+        "مولیون", length, 1, 90, 90, "جداکننده ${index + 1}"))
+      if (isUpvc) reinforcementCuts.add(CutPiece("rf_divider_$index", "گالوانیزه قوطی مولیون",
+        "گالوانیزه", (length - 40).coerceAtLeast(100), 1, 90, 90, "تقویت جداکننده ${index + 1}"))
     }
-
     // 4. Panels (Fixed or Sash Operable)
     geom.panels.forEachIndexed { idx, p ->
       val panelConfig = design.panels.getOrNull(idx)
