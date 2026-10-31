@@ -54,6 +54,8 @@ object ManufacturingCalculator {
     }
 
     val geom = GeometryEngine.computeGeometry(design)
+    missingRules.addAll(geom.validationErrors)
+    missingRules.addAll(geom.validationWarnings)
 
     // 1. Outer Frame Cuts (4 pieces, 45 degree mitre cuts)
     val frameWidthCut = design.widthMm + (weld * 2)
