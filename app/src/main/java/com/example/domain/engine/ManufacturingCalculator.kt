@@ -344,7 +344,11 @@ object ManufacturingCalculator {
         )
 
         // Hardware tracking
-        hardwarePcs["دستگیره استاندارد"] = (hardwarePcs["دستگیره استاندارد"] ?: 0) + 1
+        if (panelConfig?.hasHandle != false) {
+          val handleName = panelConfig?.handleModel?.takeIf { it.isNotBlank() } ?: "دستگیره استاندارد"
+          val handleKey = if (handleName == "دستگیره روتو استاندارد") "دستگیره استاندارد" else "دستگیره: $handleName"
+          hardwarePcs[handleKey] = (hardwarePcs[handleKey] ?: 0) + 1
+        }
         hardwarePcs["لولا قابل رگلاژ"] = (hardwarePcs["لولا قابل رگلاژ"] ?: 0) + (if (sashH > 1500) 3 else 2)
         val espagnoletteType = when (opening) {
           OpeningType.TILT_AND_TURN -> "مکانیزم یراق کامل دوحالته"
