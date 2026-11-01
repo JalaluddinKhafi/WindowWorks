@@ -29,4 +29,17 @@ class DesignerMeshTest {
       assertEquals(a.z, b.z, 0.01f)
     }
   }
+
+  @Test fun topHungOpensAroundHorizontalAxisAndHandleAddsGeometryOnlyWhenEnabled() {
+    val d = design(OpeningType.TOP_HUNG)
+    val g = GeometryEngine.computeGeometry(d)
+    val closed = buildWindow3DMesh(d, g, 70f, 0f)
+    val open = buildWindow3DMesh(d, g, 70f, 45f)
+    val before = closed.single { it.isGlass }.vertices
+    val after = open.single { it.isGlass }.vertices
+    assertEquals(before.map { it.x }, after.map { it.x })
+    assertNotEquals(before.map { it.z }, after.map { it.z })
+    val withHandle = d.copy(panels = d.panels.map { it.copy(hasHandle = true, handleX = 0.25f, handleY = 0.8f) })
+    assertEquals(open.size + 12, buildWindow3DMesh(withHandle, g, 70f, 45f).size)
+  }
 }
