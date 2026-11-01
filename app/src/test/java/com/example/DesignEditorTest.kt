@@ -31,4 +31,14 @@ class DesignEditorTest {
     assertEquals(3, m.glassPieces.size)
     assertTrue(m.glassPieces.all { it.widthMm > 0 && it.heightMm > 0 })
   }
+
+  @Test fun removalExpandsTheSiblingAndNeverRemovesLastPanel() {
+    val split = DesignEditor.split(DesignEditor.split(single(), 0, SplitAxis.VERTICAL), 1, SplitAxis.HORIZONTAL)
+    val removed = DesignEditor.remove(split, 0)
+    assertEquals(2, removed.panels.size)
+    assertEquals(1, GeometryEngine.computeGeometry(removed).dividers.size)
+    assertEquals(2280f, GeometryEngine.computeGeometry(removed).panels.first().widthMm, 0.01f)
+    val last = DesignEditor.remove(removed, 0)
+    assertEquals(last, DesignEditor.remove(last, 0))
+  }
 }
