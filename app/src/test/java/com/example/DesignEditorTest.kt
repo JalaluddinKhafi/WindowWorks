@@ -62,4 +62,12 @@ class DesignEditorTest {
       assertEquals(a.widthMm, b.widthMm, 0.01f)
     }
   }
+
+  @Test fun disablingHandleChangesBillOfMaterialsAndSlidingDoesNotAddHinges() {
+    val noHandle = single().copy(panels = listOf(PanelConfig("p1", OpeningType.SLIDING_RIGHT, hasHandle = false)))
+    val m = ManufacturingCalculator.calculate(noHandle)
+    assertFalse(m.hardwarePcs.keys.any { it.contains("دستگیره") })
+    assertFalse(m.hardwarePcs.containsKey("لولا قابل رگلاژ"))
+    assertTrue(m.hardwarePcs.containsKey("قفل و غلطک کشویی بلبرینگی"))
+  }
 }
