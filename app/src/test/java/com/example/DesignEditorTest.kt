@@ -41,4 +41,25 @@ class DesignEditorTest {
     val last = DesignEditor.remove(removed, 0)
     assertEquals(last, DesignEditor.remove(last, 0))
   }
+
+  @Test fun movingDividerKeepsSharedGeometryAndRejectsTinyOpenings() {
+    val split = DesignEditor.split(single(), 0, SplitAxis.VERTICAL)
+    val resized = DesignEditor.resizeParent(split, 0, 0.7f)
+    assertEquals((2280f - 75) * 0.7f, GeometryEngine.computeGeometry(resized).panels.first().widthMm, 0.01f)
+    val available = DesignEditor.parentAvailableMm(split, 0)!!
+    val precise = DesignEditor.resizeParent(split, 0, 180f / available)
+    assertEquals(180f, GeometryEngine.computeGeometry(precise).panels.first().widthMm, 0.01f)
+    val tiny = single().copy(widthMm = 400, heightMm = 400)
+    assertEquals(tiny, DesignEditor.split(tiny, 0, SplitAxis.VERTICAL))
+  }
+
+  @Test fun legacyUnequalPanelsKeepTheirOriginalWidthsWhenConvertingToTree() {
+    val legacy = single().copy(panels = listOf(PanelConfig("a", widthRatio = 1f), PanelConfig("b", widthRatio = 2f), PanelConfig("c", widthRatio = 3f)))
+    val before = GeometryEngine.computeGeometry(legacy)
+    val after = GeometryEngine.computeGeometry(legacy.copy(layoutRoot = DesignEditor.root(legacy)))
+    before.panels.zip(after.panels).forEach { (a, b) ->
+      assertEquals(a.xMm, b.xMm, 0.01f)
+      assertEquals(a.widthMm, b.widthMm, 0.01f)
+    }
+  }
 }
