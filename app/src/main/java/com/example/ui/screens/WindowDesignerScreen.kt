@@ -1,5 +1,14 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import com.example.domain.engine.DesignSvgExporter
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,6 +28,10 @@ import com.example.core.CurrencyHelper
 import com.example.domain.engine.CostCalculator
 import com.example.domain.engine.ManufacturingCalculator
 import com.example.domain.model.*
+import com.example.ui.designer.DimensionField
+import com.example.ui.designer.DesignHistory
+import com.example.ui.designer.PanelInspector
+import com.example.domain.engine.GeometryEngine
 import com.example.ui.designer.Elevation2DCanvas
 import com.example.ui.designer.Parametric3DCanvas
 import java.math.BigDecimal
@@ -38,10 +51,31 @@ fun WindowDesignerScreen(
   onNavigateToManufacturingInstructions: (WindowDesign) -> Unit,
   onBack: () -> Unit
 ) {
-  var design by remember { mutableStateOf(initialDesign) }
+  val history = remember(initialDesign.id) { DesignHistory(initialDesign) }
+  var design by history
+  var expandedCanvas by remember { mutableStateOf(false) }
+  var placeHandle by remember { mutableStateOf(false) }
+  var showGrid by remember { mutableStateOf(true) }
+  var showDimensions by remember { mutableStateOf(true) }
+  val geometry = remember(design) { GeometryEngine.computeGeometry(design) }
+
   var selectedTab by remember { mutableIntStateOf(0) } // 0 = 2D Elevation, 1 = 3D Interactive
   var selectedPanelIndex by remember { mutableStateOf<Int?>(0) }
   var showCostSheet by remember { mutableStateOf(false) }
+  val context = LocalContext.current
+  val exportScope = rememberCoroutineScope()
+  var pendingSvg by remember { mutableStateOf("") }
+  val svgExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/svg+xml")) { uri ->
+    if (uri != null) {
+      val snapshot = pendingSvg
+      exportScope.launch {
+        val success = withContext(Dispatchers.IO) { runCatching {
+          requireNotNull(context.contentResolver.openOutputStream(uri)).bufferedWriter(Charsets.UTF_8).use { it.write(snapshot) }
+        }.isSuccess }
+        Toast.makeText(context, if (success) "نقشهٔ SVG ذخیره شد" else "ذخیرهٔ نقشه انجام نشد", Toast.LENGTH_SHORT).show()
+      }
+    }
+  }
 
   val mfgResult = remember(design) {
     ManufacturingCalculator.calculate(design)
@@ -90,7 +124,7 @@ fun WindowDesignerScreen(
             Icon(Icons.Default.Engineering, contentDescription = "نقشه ساخت کارگاهی")
           }
           if (canSave) {
-            IconButton(onClick = { onSaveDesign(design) }) {
+            IconButton(enabled = geometry.validationErrors.isEmpty(), onClick = { onSaveDesign(design) }) {
               Icon(Icons.Default.Save, contentDescription = "ذخیره طراحی", tint = MaterialTheme.colorScheme.primary)
             }
           }
@@ -98,7 +132,7 @@ fun WindowDesignerScreen(
       )
     },
     bottomBar = {
-      Surface(
+      if (!expandedCanvas) Surface(
         tonalElevation = 6.dp,
         modifier = Modifier.fillMaxWidth()
       ) {
@@ -187,17 +221,31 @@ fun WindowDesignerScreen(
         )
       }
 
-      // Visual Canvas Area (Height 310dp)
+      Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        IconButton(onClick = { pendingSvg = DesignSvgExporter.export(design); svgExport.launch("window-${design.widthMm}x${design.heightMm}.svg") }) { Icon(Icons.Default.FileDownload, "خروجی نقشه SVG") }
+        IconButton(enabled = history.canUndo, onClick = { history.undo() }) { Icon(Icons.Default.Undo, "برگرداندن تغییر") }
+        IconButton(enabled = history.canRedo, onClick = { history.redo() }) { Icon(Icons.Default.Redo, "تکرار تغییر") }
+        FilterChip(selected = placeHandle, onClick = { placeHandle = !placeHandle }, label = { Text("جای دستگیره") })
+        IconButton(onClick = { showGrid = !showGrid }) { Icon(Icons.Default.GridOn, "نمایش شبکه") }
+        IconButton(onClick = { showDimensions = !showDimensions }) { Icon(Icons.Default.Straighten, "نمایش اندازه‌ها") }
+        IconButton(onClick = { expandedCanvas = !expandedCanvas }) { Icon(if (expandedCanvas) Icons.Default.FullscreenExit else Icons.Default.Fullscreen, "بزرگ کردن محیط طراحی") }
+      }
+      // Interactive workspace
       Box(
         modifier = Modifier
           .fillMaxWidth()
-          .height(310.dp)
+          .weight(if (expandedCanvas) 1f else 0.9f)
       ) {
         if (selectedTab == 0) {
           Elevation2DCanvas(
             design = design,
             selectedPanelIndex = selectedPanelIndex,
             onSelectPanel = { selectedPanelIndex = it },
+            showGrid = showGrid,
+            showDimensions = showDimensions,
+            onPlaceHandle = if (placeHandle) ({ index, x, y ->
+              design = design.copy(panels = design.panels.mapIndexed { i, panel -> if (i == index) panel.copy(hasHandle = true, handleX = x, handleY = y) else panel })
+            }) else null,
             modifier = Modifier.fillMaxSize()
           )
         } else {
@@ -208,6 +256,7 @@ fun WindowDesignerScreen(
         }
       }
 
+      if (geometry.validationErrors.isNotEmpty()) Text(geometry.validationErrors.distinct().joinToString("\n"), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.labelSmall)
       // Warning banner if any manufacturing rule is provisional
       if (mfgResult.isProvisional) {
         Surface(
@@ -229,6 +278,7 @@ fun WindowDesignerScreen(
         }
       }
 
+      if (!expandedCanvas) {
       // Parameter Adjustments Form
       Column(
         modifier = Modifier
@@ -244,28 +294,9 @@ fun WindowDesignerScreen(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-          OutlinedTextField(
-            value = design.widthMm.toString(),
-            onValueChange = {
-              val w = it.toIntOrNull() ?: design.widthMm
-              design = design.copy(widthMm = w)
-            },
-            label = { Text("عرض کلی (W)") },
-            singleLine = true,
-            modifier = Modifier.weight(1f)
-          )
-          OutlinedTextField(
-            value = design.heightMm.toString(),
-            onValueChange = {
-              val h = it.toIntOrNull() ?: design.heightMm
-              design = design.copy(heightMm = h)
-            },
-            label = { Text("ارتفاع کلی (H)") },
-            singleLine = true,
-            modifier = Modifier.weight(1f)
-          )
+          DimensionField(design.widthMm, "عرض کلی (W)", 400..12000, Modifier.weight(1f)) { design = design.copy(widthMm = it) }
+          DimensionField(design.heightMm, "ارتفاع کلی (H)", 400..6000, Modifier.weight(1f)) { design = design.copy(heightMm = it) }
         }
-
         // Transom Toggle & Height
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -281,16 +312,9 @@ fun WindowDesignerScreen(
           }
 
           if (design.hasTransom) {
-            OutlinedTextField(
-              value = design.transomHeightMm.toString(),
-              onValueChange = {
-                val th = it.toIntOrNull() ?: design.transomHeightMm
-                design = design.copy(transomHeightMm = th)
-              },
-              label = { Text("ارتفاع کتیبه (mm)") },
-              singleLine = true,
-              modifier = Modifier.width(130.dp)
-            )
+            DimensionField(design.transomHeightMm, "ارتفاع کتیبه", 200..(design.heightMm - 300).coerceAtLeast(200), Modifier.width(140.dp)) {
+              design = design.copy(transomHeightMm = it)
+            }
           }
         }
 
@@ -304,12 +328,12 @@ fun WindowDesignerScreen(
           Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(
               selected = design.openingDirection == OpeningDirection.INWARD,
-              onClick = { design = design.copy(openingDirection = OpeningDirection.INWARD) },
+              onClick = { design = design.copy(openingDirection = OpeningDirection.INWARD, panels = design.panels.map { it.copy(openingDirection = OpeningDirection.INWARD) }) },
               label = { Text(OpeningDirection.INWARD.titlePersian) }
             )
             FilterChip(
               selected = design.openingDirection == OpeningDirection.OUTWARD,
-              onClick = { design = design.copy(openingDirection = OpeningDirection.OUTWARD) },
+              onClick = { design = design.copy(openingDirection = OpeningDirection.OUTWARD, panels = design.panels.map { it.copy(openingDirection = OpeningDirection.OUTWARD) }) },
               label = { Text(OpeningDirection.OUTWARD.titlePersian) }
             )
           }
@@ -317,83 +341,7 @@ fun WindowDesignerScreen(
 
         HorizontalDivider()
 
-        // Number of Panels Selector
-        Text("تعداد قسمت‌ها / لنگه‌ها:", style = MaterialTheme.typography.titleSmall)
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-          listOf(1, 2, 3, 4).forEach { count ->
-            FilterChip(
-              selected = design.panels.size == count,
-              onClick = {
-                val currentPanels = design.panels
-                val newPanels = if (count > currentPanels.size) {
-                  currentPanels + List(count - currentPanels.size) {
-                    PanelConfig(id = "p_${it + currentPanels.size + 1}", openingType = OpeningType.FIXED)
-                  }
-                } else {
-                  currentPanels.take(count)
-                }
-                design = design.copy(panels = newPanels)
-                if (selectedPanelIndex != null && selectedPanelIndex!! >= count) {
-                  selectedPanelIndex = 0
-                }
-              },
-              label = { Text("${CurrencyHelper.toPersianDigits(count)} لنگه") },
-              modifier = Modifier.weight(1f)
-            )
-          }
-        }
-
-        // Selected Panel Interactive Editor
-        if (selectedPanelIndex != null && selectedPanelIndex!! < design.panels.size) {
-          val selIdx = selectedPanelIndex!!
-          val selPanel = design.panels[selIdx]
-          Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
-            modifier = Modifier.fillMaxWidth()
-          ) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Text(
-                  "تنظیمات لنگه شماره ${CurrencyHelper.toPersianDigits(selIdx + 1)} (انتخاب‌شده در نقشه):",
-                  style = MaterialTheme.typography.titleSmall,
-                  fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.primary
-                )
-                IconButton(onClick = { selectedPanelIndex = null }, modifier = Modifier.size(24.dp)) {
-                  Icon(Icons.Default.Close, contentDescription = "بستن", modifier = Modifier.size(16.dp))
-                }
-              }
-
-              // Opening types for this panel
-              Text("نوع بازشوی این لنگه:", style = MaterialTheme.typography.labelSmall)
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-              ) {
-                listOf(OpeningType.FIXED, OpeningType.CASEMENT_RIGHT, OpeningType.CASEMENT_LEFT, OpeningType.TILT_AND_TURN).forEach { ot ->
-                  FilterChip(
-                    selected = selPanel.openingType == ot,
-                    onClick = {
-                      val updated = design.panels.toMutableList()
-                      updated[selIdx] = selPanel.copy(openingType = ot)
-                      design = design.copy(panels = updated)
-                    },
-                    label = { Text(ot.titlePersian.split(" ").take(2).joinToString(" "), style = MaterialTheme.typography.labelSmall) }
-                  )
-                }
-              }
-            }
-          }
-        }
-
+        PanelInspector(design, selectedPanelIndex, { design = it }, { selectedPanelIndex = it })
         // Panel Opening Types List
         Text("فهرست تمام لنگه‌ها و بازشوها:", style = MaterialTheme.typography.titleSmall)
         design.panels.forEachIndexed { idx, p ->
@@ -543,7 +491,7 @@ fun WindowDesignerScreen(
           GlassTint.entries.take(4).forEach { tint ->
             FilterChip(
               selected = design.outerGlassTint == tint,
-              onClick = { design = design.copy(outerGlassTint = tint) },
+              onClick = { design = design.copy(outerGlassTint = tint, panels = design.panels.map { it.copy(glassTint = tint) }) },
               label = { Text(tint.titlePersian.split(" ").first(), style = MaterialTheme.typography.labelSmall) }
             )
           }
@@ -557,13 +505,14 @@ fun WindowDesignerScreen(
           GlassTint.entries.take(4).forEach { tint ->
             FilterChip(
               selected = design.innerGlassTint == tint,
-              onClick = { design = design.copy(innerGlassTint = tint) },
+              onClick = { design = design.copy(innerGlassTint = tint, panels = design.panels.map { it.copy(innerGlassTint = tint) }) },
               label = { Text(tint.titlePersian.split(" ").first(), style = MaterialTheme.typography.labelSmall) }
             )
           }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
+      }
       }
     }
   }
