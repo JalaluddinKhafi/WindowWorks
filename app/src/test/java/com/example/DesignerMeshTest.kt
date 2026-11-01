@@ -17,4 +17,16 @@ class DesignerMeshTest {
     assertEquals(1, mesh.count { it.isGlass })
     assertTrue(mesh.flatMap { it.vertices }.all { it.x.isFinite() && it.y.isFinite() && it.z.isFinite() })
   }
+
+  @Test fun slidingTranslatesGlassWithoutRotatingIt() {
+    val d = design(OpeningType.SLIDING_LEFT)
+    val g = GeometryEngine.computeGeometry(d)
+    val closed = buildWindow3DMesh(d, g, 70f, 0f).single { it.isGlass }.vertices
+    val open = buildWindow3DMesh(d, g, 70f, 90f).single { it.isGlass }.vertices
+    closed.zip(open).forEach { (a, b) ->
+      assertEquals(a.x - g.panels.single().widthMm * 0.8f, b.x, 0.01f)
+      assertEquals(a.y, b.y, 0.01f)
+      assertEquals(a.z, b.z, 0.01f)
+    }
+  }
 }
