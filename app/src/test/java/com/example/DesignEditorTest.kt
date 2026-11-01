@@ -70,4 +70,23 @@ class DesignEditorTest {
     assertFalse(m.hardwarePcs.containsKey("لولا قابل رگلاژ"))
     assertTrue(m.hardwarePcs.containsKey("قفل و غلطک کشویی بلبرینگی"))
   }
+
+  @Test fun undoRedoRestoresTheWholeLayoutAndNewEditClearsRedo() {
+    val initial = single()
+    val history = DesignHistory(initial)
+    val split = DesignEditor.split(initial, 0, SplitAxis.HORIZONTAL)
+    history.commit(split); history.undo()
+    assertEquals(initial, history.current)
+    history.redo(); assertEquals(split, history.current)
+    history.undo(); history.commit(initial.copy(name = "تغییر"))
+    assertFalse(history.canRedo)
+  }
+
+  @Test fun svgEscapesNamesAndExportsAllNestedPanelsAndHandles() {
+    val design = DesignEditor.split(single().copy(name = "<test & name>"), 0, SplitAxis.HORIZONTAL)
+    val svg = DesignSvgExporter.export(design)
+    assertTrue(svg.contains("&lt;test &amp; name&gt;"))
+    assertTrue(svg.contains("1:")); assertTrue(svg.contains("2:"))
+    assertTrue(svg.contains("viewBox="))
+  }
 }
