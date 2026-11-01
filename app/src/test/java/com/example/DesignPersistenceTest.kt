@@ -32,4 +32,12 @@ class DesignPersistenceTest {
     val design = DesignEditor.split(DesignEditor.split(initial, 0, SplitAxis.VERTICAL), 1, SplitAxis.HORIZONTAL)
     assertEquals(design, deserialize(serialize(design)))
   }
+  @Test fun oldPanelJsonLoadsWithCompatibleDefaults() {
+    val entity = serialize(WindowDesign("p", "old")).copy(panelsJson = """[{"id":"old","openingType":"FIXED"}]""")
+    val design = deserialize(entity)
+    assertNull(design.layoutRoot)
+    assertEquals(1, design.panels.size)
+    assertTrue(design.panels.first().hasHandle)
+    assertEquals(0.5f, design.panels.first().handleY, 0f)
+  }
 }
