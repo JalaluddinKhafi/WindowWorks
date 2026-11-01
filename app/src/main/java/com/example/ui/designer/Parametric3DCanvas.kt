@@ -46,8 +46,11 @@ fun Parametric3DCanvas(
   var zoomScale by remember { mutableFloatStateOf(1.0f) }
   var sashOpenAngleDeg by remember { mutableFloatStateOf(35f) }
   var isPerspective by remember { mutableStateOf(true) }
+  var resetVersion by remember { mutableIntStateOf(0) }
 
-  val geom = GeometryEngine.computeGeometry(design)
+  val geom = remember(design) { GeometryEngine.computeGeometry(design) }
+  var useFallback by remember { mutableStateOf(false) }
+  val mesh = remember(design, sashOpenAngleDeg) { buildWindow3DMesh(design, geom, 70f, sashOpenAngleDeg) }
 
   Column(
     modifier = modifier
@@ -58,15 +61,17 @@ fun Parametric3DCanvas(
       modifier = Modifier
         .fillMaxWidth()
         .weight(1f)
-        .pointerInput(Unit) {
-          detectDragGestures { change, dragAmount ->
+        .pointerInput(useFallback) {
+          if (useFallback) detectDragGestures { change, dragAmount ->
             change.consume()
             yawDeg += dragAmount.x * 0.4f
             pitchDeg = (pitchDeg - dragAmount.y * 0.4f).coerceIn(-75f, 75f)
           }
         }
     ) {
-      Canvas(modifier = Modifier.fillMaxSize()) {
+      if (!useFallback) ThreeWindowView(mesh, maxOf(design.widthMm, design.heightMm), yawDeg, pitchDeg,
+        zoomScale, isPerspective, resetVersion, Modifier.fillMaxSize(), onUnavailable = { useFallback = true })
+      else Canvas(modifier = Modifier.fillMaxSize()) {
         val canvasW = size.width
         val canvasH = size.height
         val centerX = canvasW / 2f
@@ -126,13 +131,14 @@ fun Parametric3DCanvas(
               pitchDeg = 15f
               zoomScale = 1.0f
               sashOpenAngleDeg = 35f
+              resetVersion++
             },
             modifier = Modifier.size(36.dp)
           ) {
             Icon(Icons.Default.Refresh, contentDescription = "تنظیم مجدد دوربین", tint = Color.White)
           }
           IconButton(
-            onClick = { zoomScale = 1.0f },
+            onClick = { zoomScale = 1.0f; resetVersion++ },
             modifier = Modifier.size(36.dp)
           ) {
             Icon(Icons.Default.FitScreen, contentDescription = "اندازه متناسب", tint = Color.White)
@@ -212,7 +218,7 @@ fun Parametric3DCanvas(
   }
 }
 
-private fun buildWindow3DMesh(
+internal fun buildWindow3DMesh(
   design: WindowDesign,
   geom: com.example.domain.engine.DesignGeometry,
   frameDepthMm: Float,
@@ -319,52 +325,45 @@ private fun buildWindow3DMesh(
         color = thisGlassColor
       )
     } else {
-      // Operable Sash Profile with 3D Rotation!
       val sashDepth = frameDepthMm * 0.82f
-      val sashFace = 65f
-
-      val isLeftHinged = opening == OpeningType.CASEMENT_LEFT
-      val hingeX = if (isLeftHinged) panelX else panelX + panelW
-
-      // Inward vs outward opening direction:
-      val dirSign = if (direction == OpeningDirection.INWARD) 1f else -1f
-      val rotDeg = (if (isLeftHinged) -sashAngleDeg else sashAngleDeg) * dirSign
-      val rad = Math.toRadians(rotDeg.toDouble()).toFloat()
-
-      addRotatedSash(
-        polys = polys,
-        originX = panelX,
-        originY = panelY,
-        originZ = -halfD + 8f,
-        w = panelW,
-        h = panelH,
-        d = sashDepth,
-        faceWidth = sashFace,
-        hingeX = hingeX,
-        angleRad = rad,
-        frontColor = thisSashColor,
-        sideColor = thisSashDarkColor,
-        glassColor = thisGlassColor
-      )
-    }
-
-    // Mullion divider between panels
-    if (idx < geom.panels.size - 1) {
-      val mX = panelX + panelW
-      addSolidBar(
-        polys = polys,
-        x = mX,
-        y = panelY,
-        z = -halfD,
-        w = geom.mullionProfileFaceMm,
-        h = panelH,
-        d = frameDepthMm,
-        frontColor = frameColor,
-        sideColor = frameDarkColor
-      )
+      val sashFace = minOf(65f, panelW / 4, panelH / 4)
+      val local = mutableListOf<Polygon3D>()
+      addBoxFrame(local, panelX, panelY, -halfD + 8f, panelW, panelH, sashDepth, sashFace, thisSashColor, thisSashDarkColor)
+      addGlassPlane(local, panelX + sashFace, panelY + sashFace, 0f,
+        panelW - sashFace * 2, panelH - sashFace * 2, thisGlassColor)
+      if (panelConfig?.hasHandle != false) {
+        val defaultX = when (opening) { OpeningType.CASEMENT_LEFT -> 1f - sashFace / (2 * panelW); OpeningType.TOP_HUNG -> 0.5f; else -> sashFace / (2 * panelW) }
+        val hx = panelX + panelW * (panelConfig?.handleX ?: defaultX)
+        val hy = panelY + panelH * (panelConfig?.handleY ?: 0.5f)
+        addSolidBar(local, hx - 8, hy - 10, halfD + 14, 16f, 24f, 10f, Color(0xFF94A3B8), Color(0xFF475569))
+        addSolidBar(local, hx - 5, hy, halfD + 20, 10f, 65f, 12f, Color(0xFFCBD5E1), Color(0xFF64748B))
+      }
+      val sign = if (direction == OpeningDirection.INWARD) 1f else -1f
+      val angle = Math.toRadians((sashAngleDeg * sign).toDouble()).toFloat()
+      fun transform(v: Point3D): Point3D {
+        if (opening == OpeningType.SLIDING_LEFT || opening == OpeningType.SLIDING_RIGHT) {
+          val slideSign = if (opening == OpeningType.SLIDING_LEFT) -1 else 1
+          return v.copy(x = v.x + slideSign * panelW * 0.8f * sashAngleDeg / 90f, z = v.z + 25f)
+        }
+        if (opening == OpeningType.TOP_HUNG || opening == OpeningType.TILT_AND_TURN) {
+          val hingeY = if (opening == OpeningType.TOP_HUNG) panelY else panelY + panelH
+          val tilt = if (opening == OpeningType.TILT_AND_TURN) angle / 3 else angle
+          val dy = v.y - hingeY
+          return v.copy(y = hingeY + dy * cos(tilt) - v.z * sin(tilt), z = dy * sin(tilt) + v.z * cos(tilt))
+        }
+        val left = opening == OpeningType.CASEMENT_LEFT
+        val hingeX = if (left) panelX else panelX + panelW
+        val a = if (left) -angle else angle
+        val dx = v.x - hingeX
+        return v.copy(x = hingeX + dx * cos(a) - v.z * sin(a), z = dx * sin(a) + v.z * cos(a))
+      }
+      polys.addAll(local.map { poly -> poly.copy(vertices = poly.vertices.map(::transform)) })
     }
   }
-
+  geom.dividers.forEach { divider ->
+    addSolidBar(polys, -halfW + divider.xMm, -halfH + divider.yMm, -halfD,
+      divider.widthMm, divider.heightMm, frameDepthMm, frameColor, frameDarkColor)
+  }
   return polys
 }
 
@@ -421,66 +420,6 @@ private fun addGlassPlane(
   polys.add(Polygon3D(listOf(p0, p1, p2, p3), color, z, isGlass = true))
 }
 
-private fun addRotatedSash(
-  polys: MutableList<Polygon3D>,
-  originX: Float, originY: Float, originZ: Float,
-  w: Float, h: Float, d: Float,
-  faceWidth: Float,
-  hingeX: Float,
-  angleRad: Float,
-  frontColor: Color,
-  sideColor: Color,
-  glassColor: Color
-) {
-  fun rotatePoint(p: Point3D): Point3D {
-    val relX = p.x - hingeX
-    val relZ = p.z - originZ
-    val cosA = cos(angleRad)
-    val sinA = sin(angleRad)
-    val rotX = (relX * cosA) - (relZ * sinA)
-    val rotZ = (relX * sinA) + (relZ * cosA)
-    return Point3D(hingeX + rotX, p.y, originZ + rotZ)
-  }
-
-  fun addRotatedQuad(v0: Point3D, v1: Point3D, v2: Point3D, v3: Point3D, color: Color, isGlass: Boolean = false) {
-    val r0 = rotatePoint(v0)
-    val r1 = rotatePoint(v1)
-    val r2 = rotatePoint(v2)
-    val r3 = rotatePoint(v3)
-    val avgZ = (r0.z + r1.z + r2.z + r3.z) / 4f
-    polys.add(Polygon3D(listOf(r0, r1, r2, r3), color, avgZ, isGlass))
-  }
-
-  val x = originX
-  val y = originY
-  val z = originZ
-
-  val p001 = Point3D(x, y, z + d)
-  val p101 = Point3D(x + w, y, z + d)
-  val p111 = Point3D(x + w, y + h, z + d)
-  val p011 = Point3D(x, y + h, z + d)
-
-  val p000 = Point3D(x, y, z)
-  val p100 = Point3D(x + w, y, z)
-  val p110 = Point3D(x + w, y + h, z)
-  val p010 = Point3D(x, y + h, z)
-
-  // Outer sash faces
-  addRotatedQuad(p001, p101, p111, p011, frontColor)
-  addRotatedQuad(p100, p000, p010, p110, sideColor)
-  addRotatedQuad(p000, p001, p011, p010, sideColor)
-  addRotatedQuad(p101, p100, p110, p111, sideColor)
-  addRotatedQuad(p000, p100, p101, p001, sideColor)
-  addRotatedQuad(p011, p111, p110, p010, sideColor)
-
-  // Glass inside sash
-  val g0 = Point3D(x + faceWidth, y + faceWidth, z + (d / 2f))
-  val g1 = Point3D(x + w - faceWidth, y + faceWidth, z + (d / 2f))
-  val g2 = Point3D(x + w - faceWidth, y + h - faceWidth, z + (d / 2f))
-  val g3 = Point3D(x + faceWidth, y + h - faceWidth, z + (d / 2f))
-  addRotatedQuad(g0, g1, g2, g3, glassColor, isGlass = true)
-}
-
 private fun DrawScope.render3DMesh(
   mesh: List<Polygon3D>,
   yawDeg: Float,
@@ -506,6 +445,8 @@ private fun DrawScope.render3DMesh(
   )
 
   val projectedPolys = mutableListOf<ProjectedPoly>()
+  val cameraDistance = maxOf(3000f, mesh.asSequence().flatMap { it.vertices.asSequence() }
+    .maxOfOrNull { maxOf(abs(it.x), abs(it.y), abs(it.z)) }?.times(4f) ?: 3000f)
 
   for (poly in mesh) {
     var sumZ = 0f
@@ -521,8 +462,7 @@ private fun DrawScope.render3DMesh(
       sumZ += z2
 
       val projScale = if (isPerspective) {
-        val distance = 3000f
-        distance / (distance - z2)
+        cameraDistance / (cameraDistance - z2)
       } else 1.0f
 
       val px = centerX + (x2 * scale * projScale)
