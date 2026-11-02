@@ -12,10 +12,19 @@ enum class MaterialFamily(val code: String, val titlePersian: String) {
   ALUMINUM("ALUMINUM", "آلومینیوم ترمال‌بریک و نرمال")
 }
 
+enum class WindowShape(val code: String, val titlePersian: String, val titleEnglish: String) {
+  RECTANGLE("RECTANGLE", "مستطیل استاندارد", "Standard Rectangle"),
+  ARCHED("ARCHED", "هلالی (قوس‌دار)", "Arched / Round Top"),
+  TRIANGLE("TRIANGLE", "مثلثی (شیروانی)", "Triangular / Gable"),
+  TRAPEZOIDAL("TRAPEZOIDAL", "ذوزنقه‌ای", "Trapezoidal / Rake")
+}
+
 enum class OpeningType(val code: String, val titlePersian: String) {
   FIXED("FIXED", "ثابت (بدون بازشو)"),
   CASEMENT_LEFT("CASEMENT_LEFT", "تک‌حالته چپ‌بازشو (لولایی)"),
   CASEMENT_RIGHT("CASEMENT_RIGHT", "تک‌حالته راست‌بازشو (لولایی)"),
+  DOUBLE_CASEMENT("DOUBLE_CASEMENT", "فرانسوی دولنگه بازشو"),
+  TILT("TILT", "تک‌حالته شیب‌دار (کلنگی)"),
   TILT_AND_TURN("TILT_AND_TURN", "دوحالته (بازشو و شیب‌دار)"),
   SLIDING_LEFT("SLIDING_LEFT", "کشویی به چپ"),
   SLIDING_RIGHT("SLIDING_RIGHT", "کشویی به راست"),
@@ -49,6 +58,21 @@ enum class FrameFinish(val id: String, val titlePersian: String, val colorHex: L
   GOLDEN_OAK("GOLDEN_OAK", "بلوط طلایی (Golden Oak)", 0xFF8D6E63),
   ANODIZED_SILVER("ANODIZED_SILVER", "نقره‌ای آنودایز", 0xFFB0BEC5),
   BLACK_MATT("BLACK_MATT", "مشکی مات کربنی", 0xFF1E293B)
+}
+
+enum class HandleColor(val id: String, val titlePersian: String, val colorHex: Long) {
+  SILVER("SILVER", "نقره‌ای مات (Silver)", 0xFFCBD5E1),
+  BLACK_MATT("BLACK_MATT", "مشکی مات کربنی", 0xFF1E293B),
+  GOLD("GOLD", "طلایی لوکس (Gold)", 0xFFEAB308),
+  BRASS("BRASS", "برنجی کهنه‌نما (Brass)", 0xFFB45309),
+  WHITE("WHITE", "سفید کلاسیک", 0xFFF8FAFC)
+}
+
+enum class CoatingType(val id: String, val titlePersian: String) {
+  MATTE("MATTE", "مات پودری الکتراستاتیک"),
+  WOODGRAIN("WOODGRAIN", "روکش طرح چوب لامینیت"),
+  GLOSS("GLOSS", "براق هایگلاس"),
+  ANODIZED("ANODIZED", "آنودایز متالیک")
 }
 
 data class PanelConfig(
@@ -85,6 +109,8 @@ data class WindowDesign(
   val name: String,
   val productType: ProductType = ProductType.WINDOW,
   val materialFamily: MaterialFamily = MaterialFamily.UPVC,
+  val windowShape: WindowShape = WindowShape.RECTANGLE,
+  val archHeightMm: Int = 300,
   val profileSystem: String = "Wintech 6000",
   val frameFinish: FrameFinish = FrameFinish.WHITE,
   val sashFinish: FrameFinish = FrameFinish.WHITE, // Distinct sash color allowed!
@@ -103,7 +129,14 @@ data class WindowDesign(
   val isApproved: Boolean = false,
   val version: Int = 1,
   val notes: String = "",
-  val layoutRoot: LayoutNode? = null
+  val layoutRoot: LayoutNode? = null,
+  val handleColor: HandleColor = HandleColor.SILVER,
+  val coatingType: CoatingType = CoatingType.MATTE,
+  val hasGrids: Boolean = false,
+  val gridRows: Int = 2,
+  val gridCols: Int = 2,
+  val hasLowThreshold: Boolean = false,
+  val customColorHex: Long? = null
 )
 
 data class CutPiece(

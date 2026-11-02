@@ -76,4 +76,79 @@ object DesignEditor {
       bounds.maxOf { it.xMm + it.widthMm } - bounds.minOf { it.xMm }
     else bounds.maxOf { it.yMm + it.heightMm } - bounds.minOf { it.yMm }) - 75f
   }
+
+  /** Direct editing of an individual panel's width in millimeters */
+  fun setPanelWidthMm(design: WindowDesign, index: Int, widthMm: Int): WindowDesign {
+    val avail = parentAvailableMm(design, index) ?: run {
+      // In a legacy linear layout with no tree or root, convert to root first
+      val explicit = if (design.layoutRoot == null) design.copy(layoutRoot = root(design)) else design
+      return parentAvailableMm(explicit, index)?.let {
+        setPanelWidthMm(explicit, index, widthMm)
+      } ?: design
+    }
+    val clamped = widthMm.toFloat().coerceIn(160f, (avail - 160f).coerceAtLeast(160f))
+    val fraction = (clamped / avail).coerceIn(0.01f, 0.99f)
+    return resizeParent(design, index, fraction)
+  }
+
+  /** Direct editing of transom height in millimeters */
+  fun setTransomHeightMm(design: WindowDesign, heightMm: Int): WindowDesign {
+    val clamped = heightMm.coerceIn(200, (design.heightMm - 300).coerceAtLeast(200))
+    return design.copy(hasTransom = true, transomHeightMm = clamped)
+  }
+
+  /** Snap fraction to a millimeter grid step (e.g. 10mm or 50mm) */
+  fun snapFraction(fraction: Float, availableMm: Float, snapStepMm: Int = 10): Float {
+    if (snapStepMm <= 1 || availableMm <= 0f) return fraction
+    val mm = fraction * availableMm
+    val snappedMm = (Math.round(mm / snapStepMm) * snapStepMm).toFloat()
+    return (snappedMm / availableMm).coerceIn(0.05f, 0.95f)
+  }
+
+  /** Snap to symmetry or equal split (e.g., center 0.5f, 1/3, 2/3) */
+  fun snapToEqualSplit(fraction: Float, splitCount: Int = 2, tolerance: Float = 0.04f): Float {
+    for (i in 1 until splitCount) {
+      val target = i.toFloat() / splitCount
+      if (Math.abs(fraction - target) <= tolerance) {
+        return target
+      }
+    }
+    return fraction
+  }
+
+  /** Update attributes (opening type, finish, glass tint, etc.) of a specific panel */
+  fun updatePanel(design: WindowDesign, index: Int, update: (PanelConfig) -> PanelConfig): WindowDesign {
+    val panel = design.panels.getOrNull(index) ?: return design
+    val updated = update(panel)
+    val newPanels = design.panels.mapIndexed { i, p -> if (i == index) updated else p }
+    return design.copy(panels = newPanels)
+  }
+
+  /** Change overall shape (Rectangle, Arched, Triangular, Trapezoidal) */
+  fun setShape(design: WindowDesign, shape: WindowShape, archHeightMm: Int = 300): WindowDesign {
+    return design.copy(windowShape = shape, archHeightMm = archHeightMm.coerceIn(100, design.heightMm / 2))
+  }
+
+  /** Split the whole window or opening into N equal divisions */
+  fun equalizeDivisions(design: WindowDesign, count: Int, axis: SplitAxis = SplitAxis.VERTICAL): WindowDesign {
+    val n = count.coerceIn(1, 8)
+    if (n == 1) {
+      val p1 = PanelConfig(id = "p1", openingType = OpeningType.FIXED)
+      return design.copy(panels = listOf(p1), layoutRoot = null)
+    }
+
+    val newPanels = (1..n).map { i ->
+      PanelConfig(
+        id = "p_" + UUID.randomUUID().toString().take(6),
+        openingType = if (i % 2 == 0) OpeningType.CASEMENT_LEFT else OpeningType.FIXED,
+        widthRatio = 1.0f
+      )
+    }
+
+    return design.copy(
+      panels = newPanels,
+      layoutRoot = null
+    )
+  }
 }
+

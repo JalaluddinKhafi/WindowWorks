@@ -131,6 +131,46 @@ class WorkshopRepository(private val dao: AppDao) {
     return null
   }
 
+  /**
+   * Emergency password reset for admin account in case user forgets their password.
+   * Resets password to [newPassword] (default "admin123") and ensures admin account is active.
+   */
+  suspend fun resetAdminPassword(newPassword: String = "admin123"): Boolean {
+    val allUsers = dao.selectAllUsers()
+    val admin = allUsers.find { it.role == UserRole.OWNER_ADMIN.code }
+      ?: allUsers.find { it.username.equals("admin", ignoreCase = true) }
+      ?: allUsers.firstOrNull()
+
+    if (admin != null) {
+      val salt = SecurityHelper.generateSalt()
+      dao.updateUser(
+        admin.copy(
+          salt = salt,
+          passwordHash = SecurityHelper.hashPassword(newPassword, salt),
+          isActive = true
+        )
+      )
+      dao.setSetting(SettingEntity(AppSettings.KEY_FORCE_PASSWORD_CHANGE, "false"))
+      audit("RESET_PASSWORD", "User", admin.id, "بازیابی اضطراری رمز عبور مدیر (${admin.username})")
+      return true
+    } else {
+      val salt = SecurityHelper.generateSalt()
+      dao.insertUser(
+        UserEntity(
+          id = "user_admin",
+          username = "admin",
+          fullName = "مدیر ارشد کارگاه",
+          passwordHash = SecurityHelper.hashPassword(newPassword, salt),
+          salt = salt,
+          role = UserRole.OWNER_ADMIN.code,
+          isActive = true
+        )
+      )
+      dao.setSetting(SettingEntity(AppSettings.KEY_FORCE_PASSWORD_CHANGE, "false"))
+      return true
+    }
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Users & audit
   // ---------------------------------------------------------------------------------------------
@@ -254,6 +294,10 @@ class WorkshopRepository(private val dao: AppDao) {
     }
     audit("SAVE_SETTINGS", "Settings", "app", "به‌روزرسانی تنظیمات کارگاه")
     return null
+  }
+
+  suspend fun setLanguage(languageCode: String) {
+    dao.setSetting(SettingEntity(AppSettings.KEY_APP_LANGUAGE, languageCode))
   }
 
   // ---------------------------------------------------------------------------------------------

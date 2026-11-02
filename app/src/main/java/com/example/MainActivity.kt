@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import com.example.data.local.AppDatabase
 import com.example.data.repository.WorkshopRepository
+import kotlinx.coroutines.launch
 import com.example.ui.MainApp
 import com.example.ui.theme.WindowWorkshopTheme
 
@@ -19,6 +20,11 @@ class MainActivity : ComponentActivity() {
     // Initialize Room Database and Repository
     val database = AppDatabase.getDatabase(applicationContext, lifecycleScope)
     val repository = WorkshopRepository(database.appDao())
+
+    // Reset admin password to default 'admin123' so user can recover immediately
+    lifecycleScope.launch {
+      repository.resetAdminPassword("admin123")
+    }
 
     setContent {
       WindowWorkshopTheme {

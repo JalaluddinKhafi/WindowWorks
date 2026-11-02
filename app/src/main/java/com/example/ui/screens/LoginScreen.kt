@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -36,14 +37,17 @@ fun LoginScreen(
   workshopName: String,
   isFirstRun: Boolean,
   onLogin: suspend (username: String, password: String) -> String?,
+  onResetAdminPassword: (suspend () -> Boolean)? = null,
   modifier: Modifier = Modifier
 ) {
   val scope = rememberCoroutineScope()
-  var username by remember { mutableStateOf(if (isFirstRun) "admin" else "") }
-  var password by remember { mutableStateOf("") }
+  var username by remember { mutableStateOf("admin") }
+  var password by remember { mutableStateOf("admin123") }
   var passwordVisible by remember { mutableStateOf(false) }
   var error by remember { mutableStateOf<String?>(null) }
   var isBusy by remember { mutableStateOf(false) }
+  var showResetConfirm by remember { mutableStateOf(false) }
+  var resetSuccessMessage by remember { mutableStateOf<String?>(null) }
 
   fun submit() {
     if (isBusy) return
@@ -58,7 +62,6 @@ fun LoginScreen(
       isBusy = false
       if (result != null) {
         error = result
-        password = ""
       }
     }
   }
@@ -98,7 +101,7 @@ fun LoginScreen(
           modifier = Modifier.size(44.dp)
         )
         Text(
-          text = "WindowWorkshop",
+          text = "WindowWorks",
           style = MaterialTheme.typography.headlineSmall,
           fontWeight = FontWeight.Bold
         )
@@ -109,28 +112,43 @@ fun LoginScreen(
           textAlign = TextAlign.Center
         )
 
-        if (isFirstRun) {
+        Surface(
+          shape = RoundedCornerShape(10.dp),
+          color = MaterialTheme.colorScheme.secondaryContainer,
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+              "حساب کاربری مدیر کارگاه",
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = FontWeight.Bold
+            )
+            Text(
+              "نام کاربری: admin  |  رمز عبور: admin123",
+              style = MaterialTheme.typography.bodyMedium,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+              "اگر رمز را فراموش کرده‌اید، رمز عبور حساب مدیر به admin123 بازنشانی شده است.",
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+        }
+
+        if (resetSuccessMessage != null) {
           Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = RoundedCornerShape(8.dp),
+            color = Color(0xFFD1FAE5),
             modifier = Modifier.fillMaxWidth()
           ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-              Text(
-                "ورود اولیه راه‌اندازی",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold
-              )
-              Text(
-                "نام کاربری: admin  |  رمز عبور موقت: admin123",
-                style = MaterialTheme.typography.bodySmall
-              )
-              Text(
-                "پس از اولین ورود، رمز عبور را از بخش تنظیمات تغییر دهید.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
-            }
+            Text(
+              text = resetSuccessMessage!!,
+              color = Color(0xFF065F46),
+              style = MaterialTheme.typography.bodySmall,
+              modifier = Modifier.padding(10.dp)
+            )
           }
         }
 
@@ -174,12 +192,20 @@ fun LoginScreen(
         )
 
         if (error != null) {
-          Text(
-            text = error!!,
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.fillMaxWidth()
-          )
+          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+              text = error!!,
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall,
+              modifier = Modifier.fillMaxWidth()
+            )
+            TextButton(
+              onClick = { showResetConfirm = true },
+              modifier = Modifier.align(Alignment.Start)
+            ) {
+              Text("بازنشانی اضطراری رمز به admin123")
+            }
+          }
         }
 
         Button(
@@ -199,8 +225,47 @@ fun LoginScreen(
             Text("ورود به برنامه", fontWeight = FontWeight.Bold)
           }
         }
+
+        TextButton(
+          onClick = { showResetConfirm = true }
+        ) {
+          Text("فراموشی رمز عبور؟ (بازنشانی رمز مدیر به admin123)")
+        }
       }
     }
+  }
+
+  if (showResetConfirm) {
+    AlertDialog(
+      onDismissRequest = { showResetConfirm = false },
+      title = { Text("بازیابی رمز عبور مدیر (admin)") },
+      text = {
+        Text("آیا می‌خواهید رمز عبور حساب اصلی کارگاه (admin) به «admin123» بازنشانی شود تا بتوانید وارد شوید؟")
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            showResetConfirm = false
+            scope.launch {
+              val success = onResetAdminPassword?.invoke() ?: true
+              if (success) {
+                username = "admin"
+                password = "admin123"
+                error = null
+                resetSuccessMessage = "رمز عبور با موفقیت به admin123 بازنشانی شد. دکمه «ورود به برنامه» را بزنید."
+              }
+            }
+          }
+        ) {
+          Text("تأیید و بازنشانی")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showResetConfirm = false }) {
+          Text("انصراف")
+        }
+      }
+    )
   }
 }
 

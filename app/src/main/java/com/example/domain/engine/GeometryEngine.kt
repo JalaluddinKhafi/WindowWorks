@@ -23,7 +23,9 @@ data class DesignGeometry(
   val transomPanel: PanelBounds? = null,
   val validationErrors: List<String> = emptyList(),
   val validationWarnings: List<String> = emptyList(),
-  val dividers: List<DividerBounds> = emptyList()
+  val dividers: List<DividerBounds> = emptyList(),
+  val shape: com.example.domain.model.WindowShape = com.example.domain.model.WindowShape.RECTANGLE,
+  val archHeightMm: Float = 0f
 )
 
 data class DividerBounds(val xMm: Float, val yMm: Float, val widthMm: Float, val heightMm: Float,
@@ -159,7 +161,9 @@ object GeometryEngine {
       transomPanel = transomBounds,
       validationErrors = errors,
       validationWarnings = warnings.distinct(),
-      dividers = dividers
+      dividers = dividers,
+      shape = design.windowShape,
+      archHeightMm = if (design.windowShape != com.example.domain.model.WindowShape.RECTANGLE) design.archHeightMm.toFloat() else 0f
     )
   }
 }

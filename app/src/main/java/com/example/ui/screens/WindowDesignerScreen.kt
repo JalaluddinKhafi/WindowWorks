@@ -1,18 +1,17 @@
 package com.example.ui.screens
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import android.widget.Toast
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
-import com.example.domain.engine.DesignSvgExporter
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -21,22 +20,32 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.core.AppLanguage
 import com.example.core.CurrencyHelper
-import com.example.domain.engine.CostCalculator
-import com.example.domain.engine.ManufacturingCalculator
+import com.example.core.LocalAppLanguage
+import com.example.core.Localization
+import com.example.domain.engine.*
 import com.example.domain.model.*
-import com.example.ui.designer.DimensionField
-import com.example.ui.designer.DesignHistory
-import com.example.ui.designer.PanelInspector
-import com.example.domain.engine.GeometryEngine
-import com.example.ui.designer.Elevation2DCanvas
-import com.example.ui.designer.Parametric3DCanvas
+import com.example.ui.designer.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.util.Locale
+
+enum class SpecsTab(val titleFa: String) {
+  SPECS("مشخصات"),
+  PROFILE_CUTS("برش پروفیل"),
+  GLASS_CUTS("برش شیشه"),
+  HARDWARE("یراق‌آلات"),
+  REPORT("گزارش")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,19 +58,27 @@ fun WindowDesignerScreen(
   onNavigateToCutting: (WindowDesign) -> Unit,
   onNavigateToQuotation: (WindowDesign) -> Unit,
   onNavigateToManufacturingInstructions: (WindowDesign) -> Unit,
+  onSelectLanguage: ((AppLanguage) -> Unit)? = null,
   onBack: () -> Unit
 ) {
+  val lang = LocalAppLanguage.current
   val history = remember(initialDesign.id) { DesignHistory(initialDesign) }
   var design by history
-  var expandedCanvas by remember { mutableStateOf(false) }
-  var placeHandle by remember { mutableStateOf(false) }
+
+  var activeCadTool by remember { mutableStateOf(CadToolType.SELECT) }
+  var currentModeTab by remember { mutableIntStateOf(0) } // 0 = طراحی (2D), 1 = 3D, 2 = محاسبات
+  var currentSpecsSubTab by remember { mutableStateOf(SpecsTab.SPECS) }
+
   var showGrid by remember { mutableStateOf(true) }
   var showDimensions by remember { mutableStateOf(true) }
-  val geometry = remember(design) { GeometryEngine.computeGeometry(design) }
+  var showTemplateDialog by remember { mutableStateOf(false) }
+  var editingDimension by remember { mutableStateOf<DimensionEditTarget?>(null) }
+  var selectedPanelIndex by remember { mutableIntStateOf(0) }
 
-  var selectedTab by remember { mutableIntStateOf(0) } // 0 = 2D Elevation, 1 = 3D Interactive
-  var selectedPanelIndex by remember { mutableStateOf<Int?>(0) }
-  var showCostSheet by remember { mutableStateOf(false) }
+  val geometry = remember(design) { GeometryEngine.computeGeometry(design) }
+  val mfgResult = remember(design) { ManufacturingCalculator.calculate(design) }
+  val estimate = remember(design) { CostCalculator.estimateCost(design) }
+
   val context = LocalContext.current
   val exportScope = rememberCoroutineScope()
   var pendingSvg by remember { mutableStateOf("") }
@@ -69,332 +86,399 @@ fun WindowDesignerScreen(
     if (uri != null) {
       val snapshot = pendingSvg
       exportScope.launch {
-        val success = withContext(Dispatchers.IO) { runCatching {
-          requireNotNull(context.contentResolver.openOutputStream(uri)).bufferedWriter(Charsets.UTF_8).use { it.write(snapshot) }
-        }.isSuccess }
-        Toast.makeText(context, if (success) "نقشهٔ SVG ذخیره شد" else "ذخیرهٔ نقشه انجام نشد", Toast.LENGTH_SHORT).show()
+        val success = withContext(Dispatchers.IO) {
+          runCatching {
+            requireNotNull(context.contentResolver.openOutputStream(uri)).bufferedWriter(Charsets.UTF_8).use { it.write(snapshot) }
+          }.isSuccess
+        }
+        Toast.makeText(context, if (success) "نقشه با موفقیت صادر شد" else "خطا در صدور نقشه", Toast.LENGTH_SHORT).show()
       }
     }
   }
 
-  val mfgResult = remember(design) {
-    ManufacturingCalculator.calculate(design)
-  }
-
-  val estimate = remember(design) {
-    CostCalculator.estimateCost(design)
-  }
-
-  // Cost metrics (exact decimal area / perimeter)
   val areaM2 = BigDecimal(design.widthMm.toLong() * design.heightMm.toLong())
     .divide(BigDecimal(1_000_000), 4, RoundingMode.HALF_UP)
-  val perimeterMeters = BigDecimal((design.widthMm + design.heightMm).toLong() * 2)
-    .divide(BigDecimal(1000), 4, RoundingMode.HALF_UP)
-  val pricePerM2Afn = if (areaM2 > BigDecimal.ZERO) {
-    estimate.quotationPrice.divide(areaM2, 2, RoundingMode.HALF_UP)
-  } else BigDecimal.ZERO
-
-  val pricePerLinearMeterAfn = if (perimeterMeters > BigDecimal.ZERO) {
-    estimate.quotationPrice.divide(perimeterMeters, 2, RoundingMode.HALF_UP)
-  } else BigDecimal.ZERO
+  val profileMeters = BigDecimal(mfgResult.totalProfileLengthMm)
+    .divide(BigDecimal(1000), 2, RoundingMode.HALF_UP)
 
   Scaffold(
-    topBar = {
-      TopAppBar(
-        title = {
-          Column {
-            Text(design.name, style = MaterialTheme.typography.titleMedium)
-            Text(
-              "${CurrencyHelper.toPersianDigits(design.widthMm)} × ${CurrencyHelper.toPersianDigits(design.heightMm)} میلی‌متر | ${design.profileSystem}",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-          }
-        },
-        navigationIcon = {
-          IconButton(onClick = onBack) {
-            Icon(Icons.Default.ArrowForward, contentDescription = "بازگشت")
-          }
-        },
-        actions = {
-          IconButton(onClick = { showCostSheet = true }) {
-            Icon(Icons.Default.Calculate, contentDescription = "محاسبه قیمت تمام‌شده", tint = MaterialTheme.colorScheme.primary)
-          }
-          IconButton(onClick = { onNavigateToManufacturingInstructions(design) }) {
-            Icon(Icons.Default.Engineering, contentDescription = "نقشه ساخت کارگاهی")
-          }
-          if (canSave) {
-            IconButton(enabled = geometry.validationErrors.isEmpty(), onClick = { onSaveDesign(design) }) {
-              Icon(Icons.Default.Save, contentDescription = "ذخیره طراحی", tint = MaterialTheme.colorScheme.primary)
-            }
-          }
-        }
-      )
-    },
     bottomBar = {
-      if (!expandedCanvas) Surface(
-        tonalElevation = 6.dp,
+      // Bottom 3 Primary Tabs (Matching Reference Image: [طراحی] [3D] [محاسبات])
+      Surface(
+        tonalElevation = 8.dp,
+        color = Color(0xFF0F172A),
         modifier = Modifier.fillMaxWidth()
       ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          // Quick price summary pill
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              Text("قیمت پیش‌فاکتور:", style = MaterialTheme.typography.labelMedium)
-              Text(
-                CurrencyHelper.formatMoney(estimate.quotationPrice, estimate.currency),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-              )
-            }
-            Text(
-              "مترمربع: ${CurrencyHelper.formatMoney(pricePerM2Afn, "AFN")}",
-              style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-          }
-
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            Button(
-              onClick = { showCostSheet = true },
-              modifier = Modifier.weight(1.1f)
-            ) {
-              Icon(Icons.Default.PriceCheck, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("آنالیز قیمت تمام‌شده")
-            }
-
-            OutlinedButton(
-              onClick = { onNavigateToManufacturingInstructions(design) },
-              modifier = Modifier.weight(1f)
-            ) {
-              Icon(Icons.Default.Checklist, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("نقشه کارگاهی")
-            }
-
-            IconButton(onClick = { onNavigateToCutting(design) }) {
-              Icon(Icons.Default.ContentCut, contentDescription = "نقشه برش", tint = MaterialTheme.colorScheme.primary)
-            }
-          }
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          PrimaryModeTabButton(
+            title = "طراحی",
+            icon = Icons.Default.Architecture,
+            isSelected = currentModeTab == 0,
+            onClick = { currentModeTab = 0 },
+            modifier = Modifier.weight(1f)
+          )
+          PrimaryModeTabButton(
+            title = "3D",
+            icon = Icons.Default.ViewInAr,
+            isSelected = currentModeTab == 1,
+            onClick = { currentModeTab = 1 },
+            modifier = Modifier.weight(1f)
+          )
+          PrimaryModeTabButton(
+            title = "محاسبات",
+            icon = Icons.Default.Calculate,
+            isSelected = currentModeTab == 2,
+            onClick = { currentModeTab = 2 },
+            modifier = Modifier.weight(1f)
+          )
         }
       }
     }
   ) { padding ->
-    Column(
+    Box(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding)
     ) {
-      // 2D vs 3D Tab Switcher
-      TabRow(
-        selectedTabIndex = selectedTab,
-        containerColor = MaterialTheme.colorScheme.surface
-      ) {
-        Tab(
-          selected = selectedTab == 0,
-          onClick = { selectedTab = 0 },
-          text = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              Icon(Icons.Default.Architecture, contentDescription = null, modifier = Modifier.size(18.dp))
-              Text("نمای فنی ۲ بعدی")
-            }
-          }
-        )
-        Tab(
-          selected = selectedTab == 1,
-          onClick = { selectedTab = 1 },
-          text = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              Icon(Icons.Default.ViewInAr, contentDescription = null, modifier = Modifier.size(18.dp))
-              Text("دید ۳ بعدی تعاملی")
-            }
-          }
-        )
-      }
-
-      Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        IconButton(onClick = { pendingSvg = DesignSvgExporter.export(design); svgExport.launch("window-${design.widthMm}x${design.heightMm}.svg") }) { Icon(Icons.Default.FileDownload, "خروجی نقشه SVG") }
-        IconButton(enabled = history.canUndo, onClick = { history.undo() }) { Icon(Icons.Default.Undo, "برگرداندن تغییر") }
-        IconButton(enabled = history.canRedo, onClick = { history.redo() }) { Icon(Icons.Default.Redo, "تکرار تغییر") }
-        FilterChip(selected = placeHandle, onClick = { placeHandle = !placeHandle }, label = { Text("جای دستگیره") })
-        IconButton(onClick = { showGrid = !showGrid }) { Icon(Icons.Default.GridOn, "نمایش شبکه") }
-        IconButton(onClick = { showDimensions = !showDimensions }) { Icon(Icons.Default.Straighten, "نمایش اندازه‌ها") }
-        IconButton(onClick = { expandedCanvas = !expandedCanvas }) { Icon(if (expandedCanvas) Icons.Default.FullscreenExit else Icons.Default.Fullscreen, "بزرگ کردن محیط طراحی") }
-      }
-      // Interactive workspace
-      Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .weight(if (expandedCanvas) 1f else 0.9f)
-      ) {
-        if (selectedTab == 0) {
-          Elevation2DCanvas(
-            design = design,
-            selectedPanelIndex = selectedPanelIndex,
-            onSelectPanel = { selectedPanelIndex = it },
-            showGrid = showGrid,
-            showDimensions = showDimensions,
-            onPlaceHandle = if (placeHandle) ({ index, x, y ->
-              design = design.copy(panels = design.panels.mapIndexed { i, panel -> if (i == index) panel.copy(hasHandle = true, handleX = x, handleY = y) else panel })
-            }) else null,
-            modifier = Modifier.fillMaxSize()
-          )
-        } else {
-          Parametric3DCanvas(
-            design = design,
-            modifier = Modifier.fillMaxSize()
-          )
-        }
-      }
-
-      if (geometry.validationErrors.isNotEmpty()) Text(geometry.validationErrors.distinct().joinToString("\n"), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.labelSmall)
-      // Warning banner if any manufacturing rule is provisional
-      if (mfgResult.isProvisional) {
-        Surface(
-          color = Color(0xFFFEF3C7),
-          modifier = Modifier.fillMaxWidth()
-        ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            Icon(Icons.Default.WarningAmber, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(18.dp))
-            Text(
-              text = "محاسبه مشروط: ${mfgResult.missingRulesDescription}",
-              style = MaterialTheme.typography.labelSmall,
-              color = Color(0xFF92400E)
-            )
-          }
-        }
-      }
-
-      if (!expandedCanvas) {
-      // Parameter Adjustments Form
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .weight(1f)
-          .verticalScroll(rememberScrollState())
-          .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-      ) {
-        // Dimensions Section
-        Text("ابعاد اصلی و کتیبه (میلی‌متر):", style = MaterialTheme.typography.titleSmall)
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-          DimensionField(design.widthMm, "عرض کلی (W)", 400..12000, Modifier.weight(1f)) { design = design.copy(widthMm = it) }
-          DimensionField(design.heightMm, "ارتفاع کلی (H)", 400..6000, Modifier.weight(1f)) { design = design.copy(heightMm = it) }
-        }
-        // Transom Toggle & Height
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Switch(
-              checked = design.hasTransom,
-              onCheckedChange = { design = design.copy(hasTransom = it) }
-            )
-            Text("کتیبه بالای پنجره", style = MaterialTheme.typography.bodyMedium)
-          }
-
-          if (design.hasTransom) {
-            DimensionField(design.transomHeightMm, "ارتفاع کتیبه", 200..(design.heightMm - 300).coerceAtLeast(200), Modifier.width(140.dp)) {
-              design = design.copy(transomHeightMm = it)
-            }
-          }
-        }
-
-        // Opening Direction (Inward / Outward)
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-          Text("جهت بازشوی لنگه‌ها:", style = MaterialTheme.typography.bodyMedium)
-          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(
-              selected = design.openingDirection == OpeningDirection.INWARD,
-              onClick = { design = design.copy(openingDirection = OpeningDirection.INWARD, panels = design.panels.map { it.copy(openingDirection = OpeningDirection.INWARD) }) },
-              label = { Text(OpeningDirection.INWARD.titlePersian) }
-            )
-            FilterChip(
-              selected = design.openingDirection == OpeningDirection.OUTWARD,
-              onClick = { design = design.copy(openingDirection = OpeningDirection.OUTWARD, panels = design.panels.map { it.copy(openingDirection = OpeningDirection.OUTWARD) }) },
-              label = { Text(OpeningDirection.OUTWARD.titlePersian) }
-            )
-          }
-        }
-
-        HorizontalDivider()
-
-        PanelInspector(design, selectedPanelIndex, { design = it }, { selectedPanelIndex = it })
-        // Panel Opening Types List
-        Text("فهرست تمام لنگه‌ها و بازشوها:", style = MaterialTheme.typography.titleSmall)
-        design.panels.forEachIndexed { idx, p ->
-          Card(
-            shape = RoundedCornerShape(10.dp),
-            colors = CardDefaults.cardColors(
-              containerColor = if (selectedPanelIndex == idx) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
-              else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-            ),
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable { selectedPanelIndex = idx }
-          ) {
-            Row(
-              modifier = Modifier
-                .padding(12.dp)
-                .fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
+      when (currentModeTab) {
+        0 -> {
+          // ==========================================
+          // MODE 0: 2D CAD DESIGNER (TOP-LEFT OF MOCKUP)
+          // ==========================================
+          Column(modifier = Modifier.fillMaxSize()) {
+            // Header Bar (WindowWorks, Home, Undo, Redo, Zoom In, Zoom Out, Grid, Measure, Close)
+            Surface(
+              color = Color(0xFF0F172A),
+              tonalElevation = 4.dp,
+              modifier = Modifier.fillMaxWidth()
             ) {
-              Column {
-                Text(
-                  text = "لنگه شماره ${CurrencyHelper.toPersianDigits(idx + 1)}",
-                  style = MaterialTheme.typography.labelMedium,
-                  fontWeight = FontWeight.Bold
-                )
-                Text(
-                  text = p.openingType.titlePersian,
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.primary
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                  // Blue circular home button
+                  Surface(
+                    shape = CircleShape,
+                    color = Color(0xFF0284C7),
+                    modifier = Modifier
+                      .size(38.dp)
+                      .clickable(onClick = onBack)
+                  ) {
+                    Box(contentAlignment = Alignment.Center) {
+                      Icon(Icons.Default.Home, contentDescription = "خانه", tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                  }
+                  Text(
+                    text = "WindowWorks",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                  )
+                }
+
+                // Header Utility Icons
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                  IconButton(enabled = history.canUndo, onClick = { history.undo() }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Undo, contentDescription = "بازگشت", tint = if (history.canUndo) Color.White else Color.Gray)
+                  }
+                  IconButton(enabled = history.canRedo, onClick = { history.redo() }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Redo, contentDescription = "تکرار", tint = if (history.canRedo) Color.White else Color.Gray)
+                  }
+                  IconButton(onClick = { showTemplateDialog = true }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.DashboardCustomize, contentDescription = "قالب‌ها", tint = Color(0xFF38BDF8))
+                  }
+                  IconButton(onClick = { showGrid = !showGrid }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.GridOn, contentDescription = "شبکه", tint = if (showGrid) Color(0xFF38BDF8) else Color.Gray)
+                  }
+                  IconButton(onClick = { showDimensions = !showDimensions }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Straighten, contentDescription = "اندازه‌ها", tint = if (showDimensions) Color(0xFF38BDF8) else Color.Gray)
+                  }
+                  if (canSave) {
+                    IconButton(onClick = { onSaveDesign(design) }, modifier = Modifier.size(34.dp)) {
+                      Icon(Icons.Default.Save, contentDescription = "ذخیره", tint = Color(0xFF10B981))
+                    }
+                  }
+                }
+              }
+            }
+
+            // Main Workspace: Left CAD Tools | Center 2D Canvas | Right Element Settings Inspector
+            Row(modifier = Modifier.fillMaxSize()) {
+              // 1. Left Vertical CAD Toolbar (انتخاب، خط، مستطیل، دایره، چندضلعی، متن، اندازه)
+              Surface(
+                color = Color(0xFF0F172A),
+                modifier = Modifier
+                  .width(68.dp)
+                  .fillMaxHeight()
+                  .border(1.dp, Color(0xFF1E293B))
+              ) {
+                Column(
+                  modifier = Modifier
+                    .fillMaxSize()
+                    .padding(vertical = 8.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                  CadToolSidebarButton(
+                    title = "انتخاب",
+                    icon = Icons.Default.NearMe,
+                    isSelected = activeCadTool == CadToolType.SELECT,
+                    onClick = { activeCadTool = CadToolType.SELECT }
+                  )
+                  CadToolSidebarButton(
+                    title = "خط",
+                    icon = Icons.Default.Edit,
+                    isSelected = activeCadTool == CadToolType.LINE,
+                    onClick = {
+                      activeCadTool = CadToolType.LINE
+                      // Add vertical division into currently selected panel
+                      design = DesignEditor.split(design, selectedPanelIndex, SplitAxis.VERTICAL)
+                    }
+                  )
+                  CadToolSidebarButton(
+                    title = "مستطیل",
+                    icon = Icons.Default.CropSquare,
+                    isSelected = activeCadTool == CadToolType.RECTANGLE,
+                    onClick = {
+                      activeCadTool = CadToolType.RECTANGLE
+                      design = DesignEditor.setShape(design, WindowShape.RECTANGLE)
+                    }
+                  )
+                  CadToolSidebarButton(
+                    title = "دایره",
+                    icon = Icons.Default.ChangeHistory,
+                    isSelected = activeCadTool == CadToolType.CIRCLE,
+                    onClick = {
+                      activeCadTool = CadToolType.CIRCLE
+                      design = DesignEditor.setShape(design, WindowShape.ARCHED, 350)
+                    }
+                  )
+                  CadToolSidebarButton(
+                    title = "چندضلعی",
+                    icon = Icons.Default.Hexagon,
+                    isSelected = activeCadTool == CadToolType.POLYGON,
+                    onClick = {
+                      activeCadTool = CadToolType.POLYGON
+                      design = DesignEditor.setShape(design, WindowShape.TRIANGLE, 400)
+                    }
+                  )
+                  CadToolSidebarButton(
+                    title = "متن",
+                    icon = Icons.Default.TextFields,
+                    isSelected = activeCadTool == CadToolType.TEXT,
+                    onClick = { activeCadTool = CadToolType.TEXT }
+                  )
+                  CadToolSidebarButton(
+                    title = "اندازه",
+                    icon = Icons.Default.Straighten,
+                    isSelected = activeCadTool == CadToolType.DIMENSION,
+                    onClick = {
+                      activeCadTool = CadToolType.DIMENSION
+                      editingDimension = DimensionEditTarget.OverallWidth(design.widthMm)
+                    }
+                  )
+                }
+              }
+
+              // 2. Center 2D CAD Canvas
+              Box(
+                modifier = Modifier
+                  .weight(1f)
+                  .fillMaxHeight()
+              ) {
+                Elevation2DCanvas(
+                  design = design,
+                  activeTool = activeCadTool,
+                  selectedPanelIndex = selectedPanelIndex,
+                  onSelectPanel = { selectedPanelIndex = it },
+                  showGrid = showGrid,
+                  showDimensions = showDimensions,
+                  onPlaceHandle = { idx, x, y ->
+                    design = design.copy(
+                      panels = design.panels.mapIndexed { i, panel ->
+                        if (i == idx) panel.copy(hasHandle = true, handleX = x, handleY = y) else panel
+                      }
+                    )
+                  },
+                  onEditWidth = { editingDimension = DimensionEditTarget.OverallWidth(design.widthMm) },
+                  onEditHeight = { editingDimension = DimensionEditTarget.OverallHeight(design.heightMm) },
+                  onEditTransomHeight = if (design.hasTransom) ({
+                    editingDimension = DimensionEditTarget.TransomHeight(design.transomHeightMm)
+                  }) else null,
+                  onEditPanelWidth = { idx ->
+                    val w = geometry.panels.getOrNull(idx)?.widthMm?.toInt() ?: 400
+                    editingDimension = DimensionEditTarget.PanelWidth(idx, w)
+                  },
+                  onMoveDivider = { dividerIdx, newFraction ->
+                    design = DesignEditor.resizeParent(design, dividerIdx, newFraction)
+                  },
+                  modifier = Modifier.fillMaxSize()
                 )
               }
 
-              var expandedOpening by remember { mutableStateOf(false) }
-              Box {
-                OutlinedButton(onClick = { expandedOpening = true }) {
-                  Text("تغییر بازشو")
-                  Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                }
-
-                DropdownMenu(
-                  expanded = expandedOpening,
-                  onDismissRequest = { expandedOpening = false }
+              // 3. Right Property Inspector ("تنظیمات المان" - Matching Reference Top-Left)
+              Surface(
+                color = Color(0xFF0F172A),
+                modifier = Modifier
+                  .width(220.dp)
+                  .fillMaxHeight()
+                  .border(1.dp, Color(0xFF1E293B))
+              ) {
+                Column(
+                  modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp)
+                    .verticalScroll(rememberScrollState()),
+                  verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                  OpeningType.entries.forEach { ot ->
-                    DropdownMenuItem(
-                      text = { Text(ot.titlePersian) },
+                  Text(
+                    text = "تنظیمات المان",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                  )
+
+                  // نوع بازشو (Opening Type)
+                  Text("نوع بازشو", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+                  val selectedPanel = design.panels.getOrNull(selectedPanelIndex) ?: design.panels.firstOrNull()
+                  val activeOpening = selectedPanel?.openingType ?: OpeningType.FIXED
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                  ) {
+                    OpeningTypeCardButton(
+                      title = "ثابت",
+                      icon = Icons.Default.CropSquare,
+                      isSelected = activeOpening == OpeningType.FIXED,
                       onClick = {
-                        val updated = design.panels.toMutableList()
-                        updated[idx] = p.copy(openingType = ot)
-                        design = design.copy(panels = updated)
-                        expandedOpening = false
+                        design = DesignEditor.updatePanel(design, selectedPanelIndex) { it.copy(openingType = OpeningType.FIXED) }
+                      },
+                      modifier = Modifier.weight(1f)
+                    )
+                    OpeningTypeCardButton(
+                      title = "لولایی",
+                      icon = Icons.Default.MeetingRoom,
+                      isSelected = activeOpening == OpeningType.CASEMENT_LEFT || activeOpening == OpeningType.CASEMENT_RIGHT,
+                      onClick = {
+                        design = DesignEditor.updatePanel(design, selectedPanelIndex) { it.copy(openingType = OpeningType.CASEMENT_LEFT) }
+                      },
+                      modifier = Modifier.weight(1f)
+                    )
+                    OpeningTypeCardButton(
+                      title = "کشویی",
+                      icon = Icons.Default.DoorSliding,
+                      isSelected = activeOpening == OpeningType.SLIDING_LEFT || activeOpening == OpeningType.SLIDING_RIGHT,
+                      onClick = {
+                        design = DesignEditor.updatePanel(design, selectedPanelIndex) { it.copy(openingType = OpeningType.SLIDING_LEFT) }
+                      },
+                      modifier = Modifier.weight(1f)
+                    )
+                  }
+
+                  HorizontalDivider(color = Color(0xFF1E293B))
+
+                  // پروفیل (Color Swatches Palette)
+                  Text("پروفیل", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+                  val colorSwatches = listOf(
+                    0xFFF8FAFC, 0xFFE2E8F0, 0xFF94A3B8, 0xFF334155, 0xFF1E293B,
+                    0xFF5D4037, 0xFF8D6E63, 0xFFB45309
+                  )
+                  Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (chunk in colorSwatches.chunked(4)) {
+                      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        chunk.forEach { hex ->
+                          val isChosen = (design.customColorHex ?: design.frameFinish.colorHex) == hex
+                          Box(
+                            modifier = Modifier
+                              .size(34.dp)
+                              .clip(RoundedCornerShape(6.dp))
+                              .background(Color(hex))
+                              .border(
+                                width = if (isChosen) 2.5f.dp else 1.dp,
+                                color = if (isChosen) Color(0xFF0284C7) else Color(0xFF475569),
+                                shape = RoundedCornerShape(6.dp)
+                              )
+                              .clickable {
+                                design = design.copy(customColorHex = hex)
+                              }
+                          )
+                        }
                       }
+                    }
+                  }
+
+                  HorizontalDivider(color = Color(0xFF1E293B))
+
+                  // نوع شیشه (Glass Tints)
+                  Text("نوع شیشه", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
+                  Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                      GlassTint.CLEAR,
+                      GlassTint.REFLECTIVE_BLUE,
+                      GlassTint.BRONZE,
+                      GlassTint.FROSTED
+                    ).forEach { tint ->
+                      val isSelected = design.outerGlassTint == tint
+                      Box(
+                        modifier = Modifier
+                          .weight(1f)
+                          .height(34.dp)
+                          .clip(RoundedCornerShape(6.dp))
+                          .background(Color(tint.colorHex).copy(alpha = 0.65f))
+                        .border(
+                          width = if (isSelected) 2.5f.dp else 1.dp,
+                          color = if (isSelected) Color(0xFF0284C7) else Color(0xFF475569),
+                          shape = RoundedCornerShape(6.dp)
+                        )
+                        .clickable {
+                          design = design.copy(outerGlassTint = tint)
+                        }
+                      )
+                    }
+                  }
+
+                  // Glazing Specification Selector
+                  Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF1E293B),
+                    modifier = Modifier.fillMaxWidth()
+                  ) {
+                    Row(
+                      modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      Text(
+                        text = "دوجداره Low-E",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White
+                      )
+                      Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+                    }
+                  }
+
+                  // Decorative French Georgian Grids Toggle
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text("پنجره فرانسوی (شبکه‌دار):", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                    Switch(
+                      checked = design.hasGrids,
+                      onCheckedChange = { design = design.copy(hasGrids = it) }
                     )
                   }
                 }
@@ -403,325 +487,465 @@ fun WindowDesignerScreen(
           }
         }
 
-        HorizontalDivider()
-
-        // Profile System & Brand (Series 6000 & 7000 and Aluminum)
-        Text("سیستم و برند مقطع پروفیل:", style = MaterialTheme.typography.titleSmall)
-        val profileSystems = listOf(
-          "Wintech 6000",
-          "Wintech 7000",
-          "Vistabest 60",
-          "Hofmann 60",
-          "Akpa Thermal",
-          "Saray Aluminum",
-          "Aldoks Standard"
-        )
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          profileSystems.take(4).forEach { sys ->
-            FilterChip(
-              selected = design.profileSystem == sys,
-              onClick = { design = design.copy(profileSystem = sys) },
-              label = { Text(sys, style = MaterialTheme.typography.labelSmall) }
-            )
-          }
-        }
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          profileSystems.drop(4).forEach { sys ->
-            FilterChip(
-              selected = design.profileSystem == sys,
-              onClick = { design = design.copy(profileSystem = sys) },
-              label = { Text(sys, style = MaterialTheme.typography.labelSmall) }
-            )
-          }
+        1 -> {
+          // ==========================================
+          // MODE 1: 3D REALISTIC ARCHITECTURAL PREVIEW
+          // ==========================================
+          Parametric3DCanvas(
+            design = design,
+            onUpdateDesign = { design = it },
+            modifier = Modifier.fillMaxSize()
+          )
         }
 
-        // Distinct Frame Finish vs Sash Finish
-        Text("رنگ و پوشش فریم اصلی:", style = MaterialTheme.typography.titleSmall)
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          FrameFinish.entries.take(4).forEach { finish ->
-            FilterChip(
-              selected = design.frameFinish == finish,
-              onClick = { design = design.copy(frameFinish = finish) },
-              label = { Text(finish.titlePersian.split(" ").first(), style = MaterialTheme.typography.labelSmall) }
-            )
-          }
-        }
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          FrameFinish.entries.drop(4).take(3).forEach { finish ->
-            FilterChip(
-              selected = design.frameFinish == finish,
-              onClick = { design = design.copy(frameFinish = finish) },
-              label = { Text(finish.titlePersian.split(" ").first(), style = MaterialTheme.typography.labelSmall) }
-            )
-          }
-        }
+        2 -> {
+          // ==========================================
+          // MODE 2: SPECIFICATIONS & CALCULATIONS (BOTTOM-RIGHT OF MOCKUP)
+          // ==========================================
+          Column(
+            modifier = Modifier
+              .fillMaxSize()
+              .background(Color(0xFF0F172A))
+          ) {
+            // Header Bar
+            Surface(
+              color = Color(0xFF1E293B),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Icon(Icons.Default.Calculate, contentDescription = null, tint = Color(0xFF0284C7))
+                  Text(
+                    text = "مشخصات و محاسبات",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                  )
+                }
+                IconButton(onClick = { currentModeTab = 0 }) {
+                  Icon(Icons.Default.Close, contentDescription = "بستن", tint = Color.White)
+                }
+              }
+            }
 
-        Text("رنگ و پوشش لنگه متحرک (ساش):", style = MaterialTheme.typography.titleSmall)
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          FrameFinish.entries.take(4).forEach { finish ->
-            FilterChip(
-              selected = design.sashFinish == finish,
-              onClick = { design = design.copy(sashFinish = finish) },
-              label = { Text(finish.titlePersian.split(" ").first(), style = MaterialTheme.typography.labelSmall) }
-            )
+            // Top Sub-Tabs: [مشخصات] [برش پروفیل] [برش شیشه] [یراق‌آلات] [گزارش]
+            Surface(
+              color = Color(0xFF0F172A),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .horizontalScroll(rememberScrollState())
+                  .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                SpecsTab.entries.forEach { subTab ->
+                  val isSelected = currentSpecsSubTab == subTab
+                  Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                    modifier = Modifier
+                      .clip(RoundedCornerShape(8.dp))
+                      .clickable { currentSpecsSubTab = subTab }
+                  ) {
+                    Text(
+                      text = subTab.titleFa,
+                      style = MaterialTheme.typography.labelMedium,
+                      fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                      color = Color.White,
+                      modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                  }
+                }
+              }
+            }
+
+            // Main Content Area
+            Box(
+              modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(12.dp)
+            ) {
+              when (currentSpecsSubTab) {
+                SpecsTab.SPECS -> {
+                  // Side-by-side: 2D Diagram | 3D Render | Specs Table (Exact Mockup Layout)
+                  Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                  ) {
+                    // Left: 2D Elevation diagram
+                    Surface(
+                      shape = RoundedCornerShape(12.dp),
+                      color = Color(0xFFF8FAFC),
+                      modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                    ) {
+                      Elevation2DCanvas(
+                        design = design,
+                        showGrid = false,
+                        showDimensions = true,
+                        modifier = Modifier.fillMaxSize()
+                      )
+                    }
+
+                    // Center: 3D perspective preview
+                    Surface(
+                      shape = RoundedCornerShape(12.dp),
+                      color = Color(0xFF1E293B),
+                      modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                    ) {
+                      Parametric3DCanvas(
+                        design = design,
+                        modifier = Modifier.fillMaxSize()
+                      )
+                    }
+
+                    // Right: Specifications Data Card (Matching Reference Table)
+                    Surface(
+                      shape = RoundedCornerShape(12.dp),
+                      color = Color(0xFF1E293B),
+                      modifier = Modifier
+                        .width(280.dp)
+                        .fillMaxHeight()
+                        .padding(4.dp)
+                    ) {
+                      Column(
+                        modifier = Modifier
+                          .fillMaxSize()
+                          .padding(14.dp)
+                          .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                      ) {
+                        SpecDataRow("ابعاد کل", "${CurrencyHelper.toPersianDigits(design.widthMm)} × ${CurrencyHelper.toPersianDigits(design.heightMm)} mm")
+                        SpecDataRow("مساحت شیشه", "${CurrencyHelper.toPersianDigits(areaM2.setScale(2, RoundingMode.HALF_UP).toString())} m²")
+                        SpecDataRow("طول پروفیل", "${CurrencyHelper.toPersianDigits(profileMeters.toString())} m")
+                        SpecDataRow("تعداد قطعات", "${CurrencyHelper.toPersianDigits(mfgResult.profileCuts.size + mfgResult.glassPieces.size)}")
+                        SpecDataRow("نوع شیشه", design.outerGlassTint.titlePersian)
+                        SpecDataRow("رنگ پروفیل", design.frameFinish.titlePersian.take(15))
+                        SpecDataRow("رنگ دستگیره", design.handleColor.titlePersian.take(15))
+                        SpecDataRow("قیمت نهایی", CurrencyHelper.formatMoney(estimate.quotationPrice, estimate.currency))
+                      }
+                    }
+                  }
+                }
+
+                SpecsTab.PROFILE_CUTS -> {
+                  LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                  ) {
+                    items(mfgResult.profileCuts) { cut ->
+                      Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF1E293B),
+                        modifier = Modifier.fillMaxWidth()
+                      ) {
+                        Row(
+                          modifier = Modifier.padding(12.dp),
+                          horizontalArrangement = Arrangement.SpaceBetween,
+                          verticalAlignment = Alignment.CenterVertically
+                        ) {
+                          Column {
+                            Text(cut.profileName, style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                            Text("برش دو سر: ${cut.angleStart}° / ${cut.angleEnd}°", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                          }
+                          Text("${CurrencyHelper.toPersianDigits(cut.lengthMm)} mm", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                        }
+                      }
+                    }
+                  }
+                }
+
+                SpecsTab.GLASS_CUTS -> {
+                  LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                  ) {
+                    items(mfgResult.glassPieces) { glass ->
+                      Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF1E293B),
+                        modifier = Modifier.fillMaxWidth()
+                      ) {
+                        Row(
+                          modifier = Modifier.padding(12.dp),
+                          horizontalArrangement = Arrangement.SpaceBetween,
+                          verticalAlignment = Alignment.CenterVertically
+                        ) {
+                          Column {
+                            Text("جام شیشه ${glass.tag}", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                            Text(glass.glazingTitle, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                          }
+                          Text("${CurrencyHelper.toPersianDigits(glass.widthMm)} × ${CurrencyHelper.toPersianDigits(glass.heightMm)} mm", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                        }
+                      }
+                    }
+                  }
+                }
+
+                SpecsTab.HARDWARE -> {
+                  LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                  ) {
+                    items(estimate.bomItems.filter { it.category == "یراق‌آلات" || it.category == "اتصالات" }) { item ->
+                      Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF1E293B),
+                        modifier = Modifier.fillMaxWidth()
+                      ) {
+                        Row(
+                          modifier = Modifier.padding(12.dp),
+                          horizontalArrangement = Arrangement.SpaceBetween,
+                          verticalAlignment = Alignment.CenterVertically
+                        ) {
+                          Text(item.name, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                          Text("${CurrencyHelper.toPersianDigits(item.quantity.toInt())} ${item.unit}", color = Color(0xFFFBBF24), fontWeight = FontWeight.Bold)
+                        }
+                      }
+                    }
+                  }
+                }
+
+                SpecsTab.REPORT -> {
+                  Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1E293B),
+                    modifier = Modifier.fillMaxSize()
+                  ) {
+                    Column(
+                      modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState()),
+                      verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                      Text("آنالیز مالی و قیمت تمام‌شده", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                      HorizontalDivider(color = Color(0xFF334155))
+                      SpecDataRow("هزینه پروفیل:", CurrencyHelper.formatMoney(estimate.profileCost, estimate.currency))
+                      SpecDataRow("هزینه شیشه:", CurrencyHelper.formatMoney(estimate.glassCost, estimate.currency))
+                      SpecDataRow("هزینه یراق‌آلات:", CurrencyHelper.formatMoney(estimate.hardwareCost, estimate.currency))
+                      SpecDataRow("هزینه گالوانیزه:", CurrencyHelper.formatMoney(estimate.reinforcementCost, estimate.currency))
+                      SpecDataRow("دستمزد ساخت و نصب:", CurrencyHelper.formatMoney(estimate.laborCost.add(estimate.installationCost), estimate.currency))
+                      HorizontalDivider(color = Color(0xFF334155))
+                      SpecDataRow("مجموع کل هزینه:", CurrencyHelper.formatMoney(estimate.totalBaseCost, estimate.currency))
+                      SpecDataRow("قیمت پیش‌فاکتور (${estimate.markupPercent}% سود):", CurrencyHelper.formatMoney(estimate.quotationPrice, estimate.currency))
+                    }
+                  }
+                }
+              }
+            }
+
+            // Bottom Action Bar (Matching Reference Image: [اشتراک‌گذاری] [خروجی PDF] [ذخیره پروژه])
+            Surface(
+              color = Color(0xFF1E293B),
+              tonalElevation = 6.dp,
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+              ) {
+                // ذخیره پروژه (Save Project - Blue)
+                Button(
+                  onClick = { onSaveDesign(design) },
+                  colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                  shape = RoundedCornerShape(10.dp),
+                  modifier = Modifier.weight(1f)
+                ) {
+                  Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("ذخیره پروژه", fontWeight = FontWeight.Bold)
+                }
+
+                // خروجی PDF (Export PDF - Green)
+                Button(
+                  onClick = { onNavigateToManufacturingInstructions(design) },
+                  colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                  shape = RoundedCornerShape(10.dp),
+                  modifier = Modifier.weight(1f)
+                ) {
+                  Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("خروجی PDF", fontWeight = FontWeight.Bold)
+                }
+
+                // اشتراک‌گذاری (Share SVG - Light Blue)
+                FilledTonalButton(
+                  onClick = {
+                    pendingSvg = DesignSvgExporter.export(design)
+                    svgExport.launch("window-${design.widthMm}x${design.heightMm}.svg")
+                  },
+                  colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFF38BDF8), contentColor = Color(0xFF0F172A)),
+                  shape = RoundedCornerShape(10.dp),
+                  modifier = Modifier.weight(1f)
+                ) {
+                  Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("اشتراک‌گذاری", fontWeight = FontWeight.Bold)
+                }
+              }
+            }
           }
         }
-
-        // Outer vs Inner Glass Tints
-        Text("رنگ لایه بیرونی شیشه:", style = MaterialTheme.typography.titleSmall)
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          GlassTint.entries.take(4).forEach { tint ->
-            FilterChip(
-              selected = design.outerGlassTint == tint,
-              onClick = { design = design.copy(outerGlassTint = tint, panels = design.panels.map { it.copy(glassTint = tint) }) },
-              label = { Text(tint.titlePersian.split(" ").first(), style = MaterialTheme.typography.labelSmall) }
-            )
-          }
-        }
-
-        Text("رنگ لایه درونی شیشه:", style = MaterialTheme.typography.titleSmall)
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          GlassTint.entries.take(4).forEach { tint ->
-            FilterChip(
-              selected = design.innerGlassTint == tint,
-              onClick = { design = design.copy(innerGlassTint = tint, panels = design.panels.map { it.copy(innerGlassTint = tint) }) },
-              label = { Text(tint.titlePersian.split(" ").first(), style = MaterialTheme.typography.labelSmall) }
-            )
-          }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-      }
       }
     }
   }
 
-  // Cost Calculation Bottom Sheet / Dialog
-  if (showCostSheet) {
-    var markupPctStr by remember { mutableStateOf(defaultMarkupPercent.stripTrailingZeros().toPlainString()) }
-    val currentMarkup = CurrencyHelper.parseAmount(markupPctStr)
-      .takeIf { it >= BigDecimal.ZERO } ?: defaultMarkupPercent
-
-    val recalculatedEstimate = remember(design, currentMarkup) {
-      CostCalculator.estimateCost(design, markupPercent = currentMarkup)
-    }
-
-    val dynamicPricePerM2 = if (areaM2 > BigDecimal.ZERO) {
-      recalculatedEstimate.quotationPrice.divide(areaM2, 2, RoundingMode.HALF_UP)
-    } else BigDecimal.ZERO
-
-    val dynamicPricePerLinearMeter = if (perimeterMeters > BigDecimal.ZERO) {
-      recalculatedEstimate.quotationPrice.divide(perimeterMeters, 2, RoundingMode.HALF_UP)
-    } else BigDecimal.ZERO
-
-    val usdRate = exchangeRateUsdToAfn.takeIf { it > BigDecimal.ZERO } ?: BigDecimal("72.50")
-    val totalUsd = recalculatedEstimate.quotationPrice.divide(usdRate, 2, RoundingMode.HALF_UP)
-    val calculatedProfit = recalculatedEstimate.quotationPrice.subtract(recalculatedEstimate.totalBaseCost)
-
-    ModalBottomSheet(
-      onDismissRequest = { showCostSheet = false },
-      sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ) {
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(20.dp)
-          .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Column {
-            Text("محاسبه دقیق قیمت تمام‌شده و سود (BOM)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-              "مساحت: ${CurrencyHelper.toPersianDigits(areaM2.setScale(2, RoundingMode.HALF_UP).toPlainString())} m² | محیط: ${CurrencyHelper.toPersianDigits(perimeterMeters.setScale(2, RoundingMode.HALF_UP).toPlainString())} متر",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-          }
-          IconButton(onClick = { showCostSheet = false }) {
-            Icon(Icons.Default.Close, contentDescription = "بستن")
-          }
-        }
-
-        HorizontalDivider()
-
-        // Cost breakdown table
-        Surface(
-          shape = RoundedCornerShape(10.dp),
-          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-          modifier = Modifier.fillMaxWidth()
-        ) {
-          Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("ریز بهای تمام‌شده مصالح و تولید:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("هزینه پروفیل UPVC / آلومینیوم:")
-              Text(CurrencyHelper.formatMoney(recalculatedEstimate.profileCost, "AFN"), fontWeight = FontWeight.SemiBold)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("تقویت گالوانیزه ۱.۲۵mm:")
-              Text(CurrencyHelper.formatMoney(recalculatedEstimate.reinforcementCost, "AFN"), fontWeight = FontWeight.SemiBold)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("شیشه دوجداره استاندارد:")
-              Text(CurrencyHelper.formatMoney(recalculatedEstimate.glassCost, "AFN"), fontWeight = FontWeight.SemiBold)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("یراق‌آلات، لولا و قفل:")
-              Text(CurrencyHelper.formatMoney(recalculatedEstimate.hardwareCost, "AFN"), fontWeight = FontWeight.SemiBold)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("لاستیک درزبندی EPDM:")
-              Text(CurrencyHelper.formatMoney(recalculatedEstimate.gasketCost, "AFN"), fontWeight = FontWeight.SemiBold)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("دستمزد مونتاژ و ساخت:")
-              Text(CurrencyHelper.formatMoney(recalculatedEstimate.laborCost, "AFN"), fontWeight = FontWeight.SemiBold)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("هزینه حمل و اقلام متفرقه:")
-              Text(CurrencyHelper.formatMoney(recalculatedEstimate.transportCost, "AFN"), fontWeight = FontWeight.SemiBold)
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("جمع کل بهای تمام‌شده (Base Cost):", fontWeight = FontWeight.Bold)
-              Text(CurrencyHelper.formatMoney(recalculatedEstimate.totalBaseCost, "AFN"), fontWeight = FontWeight.Bold)
-            }
-          }
-        }
-
-        // Markup setting
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          OutlinedTextField(
-            value = markupPctStr,
-            onValueChange = { markupPctStr = it },
-            label = { Text("درصد سود کارگاه (%)") },
-            singleLine = true,
-            modifier = Modifier.weight(1f)
-          )
-
-          Column(modifier = Modifier.weight(1.5f)) {
-            Text("سود پیش‌بینی شده:", style = MaterialTheme.typography.labelSmall)
-            Text(
-              CurrencyHelper.formatMoney(calculatedProfit, "AFN"),
-              style = MaterialTheme.typography.bodyMedium,
-              fontWeight = FontWeight.Bold,
-              color = Color(0xFF15803D)
-            )
-          }
-        }
-
-        // Per m² and per linear meter analysis
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-          Card(
-            modifier = Modifier.weight(1f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
-          ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-              Text("قیمت هر متر مربع:", style = MaterialTheme.typography.labelSmall)
-              Text(
-                "${CurrencyHelper.formatMoney(dynamicPricePerM2, "AFN")} / m²",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
-              )
-            }
-          }
-
-          Card(
-            modifier = Modifier.weight(1f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f))
-          ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-              Text("قیمت هر متر طول:", style = MaterialTheme.typography.labelSmall)
-              Text(
-                "${CurrencyHelper.formatMoney(dynamicPricePerLinearMeter, "AFN")} / m",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
-              )
-            }
-          }
-        }
-
-        // Grand Total Card
-        Surface(
-          shape = RoundedCornerShape(12.dp),
-          color = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.fillMaxWidth()
-        ) {
-          Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Column {
-              Text("قیمت نهایی قابل ارائه به مشتری:", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelMedium)
-              Text(
-                CurrencyHelper.formatMoney(recalculatedEstimate.quotationPrice, "AFN"),
-                color = MaterialTheme.colorScheme.onPrimary,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-              )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-              Text("معادل دالری:", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall)
-              Text(
-                CurrencyHelper.formatMoney(totalUsd, "USD"),
-                color = MaterialTheme.colorScheme.onPrimary,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-              )
-            }
-          }
-        }
-
-        Button(
-          onClick = {
-            showCostSheet = false
-            onNavigateToQuotation(design)
-          },
-          modifier = Modifier.fillMaxWidth()
-        ) {
-          Icon(Icons.Default.ReceiptLong, contentDescription = null)
-          Spacer(modifier = Modifier.width(8.dp))
-          Text("صدور پیش‌فاکتور رسمی برای مشتری")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
+  // Pre-designed CAD Templates Dialog
+  if (showTemplateDialog) {
+    CadTemplateDialog(
+      onDismiss = { showTemplateDialog = false },
+      onSelectTemplate = { template ->
+        design = CadTemplates.applyTemplate(design, template)
+        showTemplateDialog = false
       }
+    )
+  }
+
+  // Direct Dimension Edit Modal Dialog (when tapping dimension lines)
+  if (editingDimension != null) {
+    val target = editingDimension!!
+    val allowedRange = when (target) {
+      is DimensionEditTarget.OverallWidth -> 400..12000
+      is DimensionEditTarget.OverallHeight -> 400..6000
+      is DimensionEditTarget.TransomHeight -> 200..(design.heightMm - 300).coerceAtLeast(200)
+      is DimensionEditTarget.PanelWidth -> 160..(design.widthMm - 200).coerceAtLeast(160)
     }
+
+    DimensionEditDialog(
+      target = target,
+      allowedRange = allowedRange,
+      onDismiss = { editingDimension = null },
+      onApply = { newValue ->
+        design = when (target) {
+          is DimensionEditTarget.OverallWidth -> design.copy(widthMm = newValue)
+          is DimensionEditTarget.OverallHeight -> design.copy(heightMm = newValue)
+          is DimensionEditTarget.TransomHeight -> DesignEditor.setTransomHeightMm(design, newValue)
+          is DimensionEditTarget.PanelWidth -> DesignEditor.setPanelWidthMm(design, target.panelIndex, newValue)
+        }
+        editingDimension = null
+      }
+    )
+  }
+}
+
+@Composable
+private fun PrimaryModeTabButton(
+  title: String,
+  icon: ImageVector,
+  isSelected: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  Surface(
+    shape = RoundedCornerShape(10.dp),
+    color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+    modifier = modifier
+      .height(44.dp)
+      .clip(RoundedCornerShape(10.dp))
+      .clickable(onClick = onClick)
+  ) {
+    Row(
+      modifier = Modifier.fillMaxSize(),
+      horizontalArrangement = Arrangement.Center,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Icon(icon, contentDescription = null, tint = if (isSelected) Color.White else Color(0xFF94A3B8), modifier = Modifier.size(20.dp))
+      Spacer(modifier = Modifier.width(8.dp))
+      Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+        color = if (isSelected) Color.White else Color(0xFFCBD5E1)
+      )
+    }
+  }
+}
+
+@Composable
+private fun CadToolSidebarButton(
+  title: String,
+  icon: ImageVector,
+  isSelected: Boolean,
+  onClick: () -> Unit
+) {
+  Surface(
+    shape = RoundedCornerShape(8.dp),
+    color = if (isSelected) Color(0xFF0284C7) else Color.Transparent,
+    modifier = Modifier
+      .size(54.dp)
+      .clip(RoundedCornerShape(8.dp))
+      .clickable(onClick = onClick)
+  ) {
+    Column(
+      modifier = Modifier.fillMaxSize(),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.Center
+    ) {
+      Icon(icon, contentDescription = title, tint = if (isSelected) Color.White else Color(0xFF94A3B8), modifier = Modifier.size(20.dp))
+      Spacer(modifier = Modifier.height(2.dp))
+      Text(
+        text = title,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (isSelected) Color.White else Color(0xFF94A3B8)
+      )
+    }
+  }
+}
+
+@Composable
+private fun OpeningTypeCardButton(
+  title: String,
+  icon: ImageVector,
+  isSelected: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  Surface(
+    shape = RoundedCornerShape(8.dp),
+    color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+    modifier = modifier
+      .height(56.dp)
+      .clip(RoundedCornerShape(8.dp))
+      .clickable(onClick = onClick)
+  ) {
+    Column(
+      modifier = Modifier.fillMaxSize(),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.Center
+    ) {
+      Icon(icon, contentDescription = null, tint = if (isSelected) Color.White else Color.Gray, modifier = Modifier.size(20.dp))
+      Spacer(modifier = Modifier.height(2.dp))
+      Text(text = title, style = MaterialTheme.typography.labelSmall, color = if (isSelected) Color.White else Color(0xFF94A3B8))
+    }
+  }
+}
+
+@Composable
+private fun SpecDataRow(label: String, value: String) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .background(Color(0xFF0F172A), RoundedCornerShape(6.dp))
+      .padding(horizontal = 10.dp, vertical = 8.dp),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    Text(label, style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
+    Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.White)
   }
 }

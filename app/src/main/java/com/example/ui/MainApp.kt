@@ -9,8 +9,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
+import com.example.core.AppLanguage
 import com.example.core.AppSettings
+import com.example.core.LocalAppLanguage
 import com.example.core.UserRole
 import com.example.data.repository.WorkshopRepository
 import com.example.domain.model.*
@@ -132,7 +135,8 @@ fun MainApp(repository: WorkshopRepository) {
           currentScreen = Screen.DASHBOARD
         }
         error
-      }
+      },
+      onResetAdminPassword = { repository.resetAdminPassword("admin123") }
     )
     return
   }
@@ -199,8 +203,15 @@ fun MainApp(repository: WorkshopRepository) {
     )
   }
 
-  // Force Right-to-Left (RTL) Layout for Persian UI
-  CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+  val appLang = remember(settings.language) { AppLanguage.fromCode(settings.language) }
+  val layoutDir = if (appLang.isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+  var showAppLangMenu by remember { mutableStateOf(false) }
+
+  // Dynamic Layout Direction (RTL for Dari/Pashto, LTR for English) and AppLanguage
+  CompositionLocalProvider(
+    LocalLayoutDirection provides layoutDir,
+    LocalAppLanguage provides appLang
+  ) {
     Scaffold(
       topBar = {
         if (currentScreen in listOf(Screen.DASHBOARD, Screen.PROJECTS, Screen.FINANCE, Screen.CUSTOMERS, Screen.MORE)) {
@@ -219,6 +230,30 @@ fun MainApp(repository: WorkshopRepository) {
               }
             },
             actions = {
+              Box {
+                TextButton(onClick = { showAppLangMenu = true }) {
+                  Text(
+                    when (appLang) {
+                      AppLanguage.ENGLISH -> "EN"
+                      AppLanguage.DARI -> "دری"
+                      AppLanguage.PASHTO -> "پښتو"
+                    },
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                  )
+                }
+                DropdownMenu(expanded = showAppLangMenu, onDismissRequest = { showAppLangMenu = false }) {
+                  AppLanguage.entries.forEach { l ->
+                    DropdownMenuItem(
+                      text = { Text("${l.titleNative} (${l.titleEnglish})") },
+                      onClick = {
+                        showAppLangMenu = false
+                        scope.launch { repository.setLanguage(l.code) }
+                      }
+                    )
+                  }
+                }
+              }
               if (can.canCreateInvoices) {
                 IconButton(onClick = { navigate(Screen.PROJECT_CALCULATOR) }) {
                   Icon(Icons.Default.Calculate, contentDescription = "محاسبه پروژه")
@@ -383,6 +418,7 @@ fun MainApp(repository: WorkshopRepository) {
                 activeDesign = d
                 currentScreen = Screen.MANUFACTURING_INSTRUCTIONS
               },
+              onSelectLanguage = { l -> scope.launch { repository.setLanguage(l.code) } },
               onBack = { currentScreen = Screen.DASHBOARD }
             )
           }

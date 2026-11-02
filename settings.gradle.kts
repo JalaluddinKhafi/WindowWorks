@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "WindowWorkshop"
+rootProject.name = "WindowWorks"
 
 include(":app")

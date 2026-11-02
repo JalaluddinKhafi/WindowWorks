@@ -14,7 +14,8 @@ data class AppSettings(
   val sawKerfMm: Int = 4,
   val endTrimMm: Int = 20,
   val quotationPaymentTerms: String =
-    "۵۰٪ پیش‌پرداخت هنگام عقد قرارداد، ۴۰٪ هنگام تحویل، ۱۰٪ پس از نصب و تحویل نهایی."
+    "۵۰٪ پیش‌پرداخت هنگام عقد قرارداد، ۴۰٪ هنگام تحویل، ۱۰٪ پس از نصب و تحویل نهایی.",
+  val language: String = "fa"
 ) {
   companion object {
     const val KEY_WORKSHOP_NAME = "workshop_name"
@@ -24,6 +25,7 @@ data class AppSettings(
     const val KEY_SAW_KERF = "saw_kerf_mm"
     const val KEY_END_TRIM = "end_trim_mm"
     const val KEY_PAYMENT_TERMS = "quotation_payment_terms"
+    const val KEY_APP_LANGUAGE = "app_language"
 
     /** Set to "true" until the bootstrap admin replaces the default password. */
     const val KEY_FORCE_PASSWORD_CHANGE = "force_password_change"
@@ -41,7 +43,8 @@ data class AppSettings(
       KEY_END_TRIM to "20",
       KEY_PAYMENT_TERMS to
         "۵۰٪ پیش‌پرداخت هنگام عقد قرارداد، ۴۰٪ هنگام تحویل، ۱۰٪ پس از نصب و تحویل نهایی.",
-      KEY_FORCE_PASSWORD_CHANGE to "false"
+      KEY_FORCE_PASSWORD_CHANGE to "false",
+      KEY_APP_LANGUAGE to "fa"
     )
 
     fun fromMap(values: Map<String, String>): AppSettings {
@@ -58,7 +61,8 @@ data class AppSettings(
           .max(BigDecimal.ZERO),
         sawKerfMm = CurrencyHelper.parseAmount(read(KEY_SAW_KERF, "4")).toInt().coerceIn(0, 50),
         endTrimMm = CurrencyHelper.parseAmount(read(KEY_END_TRIM, "20")).toInt().coerceIn(0, 500),
-        quotationPaymentTerms = read(KEY_PAYMENT_TERMS, defaults.quotationPaymentTerms)
+        quotationPaymentTerms = read(KEY_PAYMENT_TERMS, defaults.quotationPaymentTerms),
+        language = read(KEY_APP_LANGUAGE, defaults.language)
       )
     }
 
@@ -69,7 +73,8 @@ data class AppSettings(
       KEY_DEFAULT_MARKUP to settings.defaultMarkupPercent.toPlainString(),
       KEY_SAW_KERF to settings.sawKerfMm.toString(),
       KEY_END_TRIM to settings.endTrimMm.toString(),
-      KEY_PAYMENT_TERMS to settings.quotationPaymentTerms
+      KEY_PAYMENT_TERMS to settings.quotationPaymentTerms,
+      KEY_APP_LANGUAGE to settings.language
     )
   }
 }

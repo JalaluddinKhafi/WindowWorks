@@ -1,6 +1,6 @@
 {
-  "name": "WindowWorkshop",
-  "description": "نرم‌افزار جامع مدیریت کارگاه، طراحی پارامتریک دو‌بعدی و سه‌بعدی، بهینه‌سازی برش و حسابداری پنجره و درب دوجداره UPVC و آلومینیوم",
+  "name": "WindowWorks",
+  "description": "Professional UPVC and aluminum window and door CAD design and manufacturing system with parametric 2D/3D engine, cutting optimization, and multi-language support (English, Dari, Pashto).",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
