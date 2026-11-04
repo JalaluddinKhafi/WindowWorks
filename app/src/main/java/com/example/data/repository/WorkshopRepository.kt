@@ -6,6 +6,7 @@ import com.example.core.SecurityHelper
 import com.example.core.UserRole
 import com.example.data.backup.BackupManager
 import com.example.data.local.*
+import com.example.domain.engine.GeometryEngine
 import com.example.domain.model.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -530,6 +531,8 @@ class WorkshopRepository(private val dao: AppDao) {
     if (arr.length() > 0) {
       design.layoutRoot?.let { arr.getJSONObject(0).put("layoutRoot", DesignLayoutCodec.encode(it)) }
       arr.getJSONObject(0).put("designOpeningDirection", design.openingDirection.name)
+      arr.getJSONObject(0).put("profileFaceWidthMm", design.profileFaceWidthMm)
+      arr.getJSONObject(0).put("hasThermalBreak", design.hasThermalBreak)
     }
 
     return DesignEntity(
@@ -557,11 +560,15 @@ class WorkshopRepository(private val dao: AppDao) {
     val panels = mutableListOf<PanelConfig>()
     var layoutRoot: LayoutNode? = null
     var designDirection = OpeningDirection.INWARD
+    var faceWidthMm: Int? = null
+    var thermalBreak = true
     try {
       val arr = JSONArray(entity.panelsJson)
       if (arr.length() > 0) {
         arr.getJSONObject(0).optJSONObject("layoutRoot")?.let { layoutRoot = DesignLayoutCodec.decode(it) }
         designDirection = runCatching { OpeningDirection.valueOf(arr.getJSONObject(0).optString("designOpeningDirection", "INWARD")) }.getOrDefault(OpeningDirection.INWARD)
+        faceWidthMm = arr.getJSONObject(0).optInt("profileFaceWidthMm", 0).takeIf { it in 30..120 }
+        thermalBreak = arr.getJSONObject(0).optBoolean("hasThermalBreak", true)
       }
       for (i in 0 until arr.length()) {
         val obj = arr.getJSONObject(i)
@@ -596,6 +603,10 @@ class WorkshopRepository(private val dao: AppDao) {
       productType = try { ProductType.valueOf(entity.productType) } catch (_: Exception) { ProductType.WINDOW },
       materialFamily = try { MaterialFamily.valueOf(entity.materialFamily) } catch (_: Exception) { MaterialFamily.UPVC },
       profileSystem = entity.profileSystem,
+      profileFaceWidthMm = faceWidthMm
+        ?: MaterialCatalog.find(entity.profileSystem)?.faceWidthMm
+        ?: GeometryEngine.DEFAULT_FRAME_FACE_MM.toInt(),
+      hasThermalBreak = thermalBreak,
       frameFinish = try { FrameFinish.valueOf(entity.frameFinish) } catch (_: Exception) { FrameFinish.WHITE },
       sashFinish = try { FrameFinish.valueOf(entity.sashFinish) } catch (_: Exception) { FrameFinish.WHITE },
       outerGlassTint = try { GlassTint.valueOf(entity.outerGlassTint) } catch (_: Exception) { GlassTint.CLEAR },

@@ -624,7 +624,11 @@ object CadTemplates {
     ).copy(
       notes = current.notes,
       outerGlassTint = current.outerGlassTint,
-      innerGlassTint = current.innerGlassTint
+      innerGlassTint = current.innerGlassTint,
+      // A template only changes the layout; the chosen material family and system stay intact.
+      materialFamily = current.materialFamily,
+      profileFaceWidthMm = current.profileFaceWidthMm,
+      hasThermalBreak = current.hasThermalBreak
     )
   }
 }
