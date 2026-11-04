@@ -1,5 +1,7 @@
 package com.example.domain.engine
 
+import com.example.domain.model.MaterialCatalog
+import com.example.domain.model.MaterialFamily
 import com.example.domain.model.WindowDesign
 import com.example.domain.model.LayoutNode
 import com.example.domain.model.SplitAxis
@@ -18,7 +20,7 @@ data class DesignGeometry(
   val outerFrameHeightMm: Float,
   val frameProfileFaceMm: Float = 60f,
   val mullionProfileFaceMm: Float = 75f,
-  val sashProfileFaceMm: Float = 75f,
+  val sashProfileFaceMm: Float = 72f,
   val panels: List<PanelBounds>,
   val transomPanel: PanelBounds? = null,
   val validationErrors: List<String> = emptyList(),
@@ -38,10 +40,25 @@ object GeometryEngine {
   private const val MAX_WINDOW_HEIGHT = 3200
   private const val MIN_SASH_WIDTH = 380
   private const val MIN_SASH_HEIGHT = 380
+  /** Kept for callers that rely on the PVC default face width. */
+  const val DEFAULT_FRAME_FACE_MM = 60f
+
+  /** Face width of the selected profile system; falls back to the workshop default. */
+  fun frameFaceMm(design: WindowDesign): Float =
+    design.profileFaceWidthMm.coerceIn(30, 120).toFloat().takeIf { it > 0f } ?: DEFAULT_FRAME_FACE_MM
 
   fun computeGeometry(design: WindowDesign): DesignGeometry {
     val errors = mutableListOf<String>()
     val warnings = mutableListOf<String>()
+
+    val system = com.example.domain.model.MaterialCatalog.find(design.profileSystem)
+    val materialWarning = if (system == null) null else if (system.family != design.materialFamily) {
+      "سیستم پروفیل «${system.code}» متعلق به ${MaterialCatalog.shortFamilyTitle(system.family)} است ولی جنس انتخابی طرح ${MaterialCatalog.shortFamilyTitle(design.materialFamily)} می‌باشد."
+    } else null
+    materialWarning?.let(warnings::add)
+    if (design.materialFamily == MaterialFamily.ALUMINUM && !design.hasThermalBreak) {
+      warnings.add("پروفیل آلومینیومی بدون پل حرارتی است؛ برای اقلیم سرد ضریب انتقال حرارت بالاست.")
+    }
 
     if (design.widthMm < MIN_WINDOW_WIDTH) {
       errors.add("عرض پنجره (${design.widthMm} میلی‌متر) کمتر از حداقل مجاز ($MIN_WINDOW_WIDTH میلی‌متر) است.")
@@ -56,7 +73,7 @@ object GeometryEngine {
       warnings.add("ارتفاع بیش از $MAX_WINDOW_HEIGHT میلی‌متر ممکن است در اثر بار باد خمش ایجاد کند.")
     }
 
-    val frameFace = 60f
+    val frameFace = frameFaceMm(design)
     val mullionFace = 75f
     val panelCount = design.panels.size.coerceAtLeast(1)
 
@@ -157,6 +174,7 @@ object GeometryEngine {
       outerFrameHeightMm = design.heightMm.toFloat(),
       frameProfileFaceMm = frameFace,
       mullionProfileFaceMm = mullionFace,
+      sashProfileFaceMm = system?.sashFaceMm?.toFloat() ?: 72f,
       panels = panelBoundsList,
       transomPanel = transomBounds,
       validationErrors = errors,

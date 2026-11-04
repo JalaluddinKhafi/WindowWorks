@@ -47,6 +47,9 @@ object ManufacturingCalculator {
 
     val isUpvc = design.materialFamily == MaterialFamily.UPVC
     val weld = if (isUpvc) weldingAllowanceMm else 0
+    // Aluminum is mechanically jointed with a wider glass rebate and no galvanized insert.
+    val glassRebate = if (isUpvc) glassDeductionMm else (glassDeductionMm + 6)
+    val frameCornerCorrection = if (isUpvc) 0 else 4
 
     val missingRules = mutableListOf<String>()
     if (design.profileSystem.isBlank() || design.profileSystem == "نامشخص") {
@@ -57,9 +60,9 @@ object ManufacturingCalculator {
     missingRules.addAll(geom.validationErrors)
     missingRules.addAll(geom.validationWarnings)
 
-    // 1. Outer Frame Cuts (4 pieces, 45 degree mitre cuts)
-    val frameWidthCut = design.widthMm + (weld * 2)
-    val frameHeightCut = design.heightMm + (weld * 2)
+    // 1. Outer Frame Cuts (4 pieces, 45 degree mitre cuts; aluminum mitre loses 4 mm per corner)
+    val frameWidthCut = design.widthMm + (weld * 2) + frameCornerCorrection
+    val frameHeightCut = design.heightMm + (weld * 2) + frameCornerCorrection
 
     profileCuts.add(
       CutPiece(
@@ -169,8 +172,8 @@ object ManufacturingCalculator {
       }
 
       // Glass for transom
-      val tGlassW = (geom.transomPanel.widthMm - glassDeductionMm).toInt()
-      val tGlassH = (geom.transomPanel.heightMm - glassDeductionMm).toInt()
+      val tGlassW = (geom.transomPanel.widthMm - glassRebate).toInt()
+      val tGlassH = (geom.transomPanel.heightMm - glassRebate).toInt()
       val tArea = (BigDecimal(tGlassW).multiply(BigDecimal(tGlassH)))
         .divide(BigDecimal(1_000_000), 4, RoundingMode.HALF_UP)
       glassPieces.add(
@@ -202,8 +205,8 @@ object ManufacturingCalculator {
 
       if (opening == OpeningType.FIXED) {
         // Fixed pane glass directly in frame rebate
-        val glassW = (p.widthMm - glassDeductionMm).toInt()
-        val glassH = (p.heightMm - glassDeductionMm).toInt()
+        val glassW = (p.widthMm - glassRebate).toInt()
+        val glassH = (p.heightMm - glassRebate).toInt()
         val area = BigDecimal(glassW).multiply(BigDecimal(glassH))
           .divide(BigDecimal(1_000_000), 4, RoundingMode.HALF_UP)
 
@@ -302,8 +305,8 @@ object ManufacturingCalculator {
         }
 
         // Sash Glass
-        val glassW = (sashW - 140 - glassDeductionMm).coerceAtLeast(100)
-        val glassH = (sashH - 140 - glassDeductionMm).coerceAtLeast(100)
+        val glassW = (sashW - 140 - glassRebate).coerceAtLeast(100)
+        val glassH = (sashH - 140 - glassRebate).coerceAtLeast(100)
         val area = BigDecimal(glassW).multiply(BigDecimal(glassH))
           .divide(BigDecimal(1_000_000), 4, RoundingMode.HALF_UP)
 
