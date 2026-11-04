@@ -87,6 +87,8 @@ fun MainApp(repository: WorkshopRepository) {
         widthMm = 1500,
         heightMm = 1700,
         profileSystem = "Wintech 6000",
+        materialFamily = MaterialFamily.UPVC,
+        profileFaceWidthMm = 60,
         frameFinish = FrameFinish.WHITE,
         sashFinish = FrameFinish.WHITE,
         hasTransom = false,
@@ -375,6 +377,9 @@ fun MainApp(repository: WorkshopRepository) {
                       name = item.description,
                       productType = item.productType,
                       materialFamily = item.materialFamily,
+                      profileSystem = MaterialCatalog.defaultFor(item.materialFamily).code,
+                      profileFaceWidthMm = MaterialCatalog.defaultFor(item.materialFamily).faceWidthMm,
+                      hasThermalBreak = item.materialFamily != MaterialFamily.ALUMINUM,
                       widthMm = item.widthMm,
                       heightMm = item.heightMm,
                       panels = listOf(

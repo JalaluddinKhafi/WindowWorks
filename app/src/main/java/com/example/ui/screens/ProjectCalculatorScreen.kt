@@ -501,6 +501,9 @@ fun ProjectCalculatorScreen(
                     productType = item.productType,
                     materialFamily = item.materialFamily,
                     profileSystem = item.profileSystem,
+                    profileFaceWidthMm = MaterialCatalog.find(item.profileSystem)?.faceWidthMm
+                      ?: MaterialCatalog.defaultFor(item.materialFamily).faceWidthMm,
+                    hasThermalBreak = item.materialFamily != MaterialFamily.ALUMINUM || item.profileSystem != "Alu 50 Normal",
                     frameFinish = item.frameFinish,
                     widthMm = item.widthMm,
                     heightMm = item.heightMm,

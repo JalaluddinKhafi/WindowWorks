@@ -1,4 +1,4 @@
-package com.example.ui.screens
+﻿package com.example.ui.screens
 
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -74,6 +74,11 @@ fun WindowDesignerScreen(
   var showTemplateDialog by remember { mutableStateOf(false) }
   var editingDimension by remember { mutableStateOf<DimensionEditTarget?>(null) }
   var selectedPanelIndex by remember { mutableIntStateOf(0) }
+  var inspectorTab by remember { mutableIntStateOf(0) } // 0 = لنگه، 1 = طرح
+  var canvasViewMode by remember { mutableStateOf(CanvasViewMode.BODY) }
+  var snapStepMm by remember { mutableIntStateOf(10) }
+  var zoomFactor by remember { mutableFloatStateOf(1f) }
+  var resetZoom by remember { mutableStateOf<() -> Unit>({}) }
 
   val geometry = remember(design) { GeometryEngine.computeGeometry(design) }
   val mfgResult = remember(design) { ManufacturingCalculator.calculate(design) }
@@ -101,12 +106,15 @@ fun WindowDesignerScreen(
   val profileMeters = BigDecimal(mfgResult.totalProfileLengthMm)
     .divide(BigDecimal(1000), 2, RoundingMode.HALF_UP)
 
+  val currentSystem = MaterialCatalog.find(design.profileSystem) ?: MaterialCatalog.defaultFor(design.materialFamily)
+  val materialAccent = design.materialFamily.accentColor()
+
   Scaffold(
     bottomBar = {
       // Bottom 3 Primary Tabs (Matching Reference Image: [طراحی] [3D] [محاسبات])
       Surface(
         tonalElevation = 8.dp,
-        color = Color(0xFF0F172A),
+        color = StudioColors.Surface,
         modifier = Modifier.fillMaxWidth()
       ) {
         Row(
@@ -152,82 +160,132 @@ fun WindowDesignerScreen(
           // MODE 0: 2D CAD DESIGNER (TOP-LEFT OF MOCKUP)
           // ==========================================
           Column(modifier = Modifier.fillMaxSize()) {
-            // Header Bar (WindowWorks, Home, Undo, Redo, Zoom In, Zoom Out, Grid, Measure, Close)
+            // Header Bar: home, design identity + material badge, history and quick utilities
             Surface(
-              color = Color(0xFF0F172A),
+              color = StudioColors.Surface,
               tonalElevation = 4.dp,
               modifier = Modifier.fillMaxWidth()
             ) {
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                  // Blue circular home button
-                  Surface(
-                    shape = CircleShape,
-                    color = Color(0xFF0284C7),
-                    modifier = Modifier
-                      .size(38.dp)
-                      .clickable(onClick = onBack)
-                  ) {
-                    Box(contentAlignment = Alignment.Center) {
-                      Icon(Icons.Default.Home, contentDescription = "خانه", tint = Color.White, modifier = Modifier.size(20.dp))
+              Column {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                      shape = CircleShape,
+                      color = StudioColors.AccentStrong,
+                      modifier = Modifier
+                        .size(34.dp)
+                        .clickable(onClick = onBack)
+                    ) {
+                      Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Home, contentDescription = "خانه", tint = Color.White, modifier = Modifier.size(18.dp))
+                      }
+                    }
+                    Column {
+                      Text(
+                        text = design.name.ifBlank { "طرح بدون نام" },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = StudioColors.TextPrimary,
+                        maxLines = 1
+                      )
+                      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Surface(
+                          shape = RoundedCornerShape(4.dp),
+                          color = materialAccent.copy(alpha = 0.18f)
+                        ) {
+                          Text(
+                            text = MaterialCatalog.shortFamilyTitle(design.materialFamily),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = materialAccent,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                          )
+                        }
+                        Text(
+                          text = "${currentSystem.code} • ${CurrencyHelper.toPersianDigits(design.widthMm)}×${CurrencyHelper.toPersianDigits(design.heightMm)}",
+                          style = MaterialTheme.typography.labelSmall,
+                          color = StudioColors.TextMuted,
+                          maxLines = 1
+                        )
+                      }
                     }
                   }
-                  Text(
-                    text = "WindowWorks",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                  )
+
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(enabled = history.canUndo, onClick = { history.undo() }, modifier = Modifier.size(32.dp)) {
+                      Icon(
+                        Icons.Default.Undo,
+                        contentDescription = "بازگشت",
+                        tint = if (history.canUndo) StudioColors.TextPrimary else StudioColors.TextMuted.copy(alpha = 0.4f),
+                        modifier = Modifier.size(19.dp)
+                      )
+                    }
+                    IconButton(enabled = history.canRedo, onClick = { history.redo() }, modifier = Modifier.size(32.dp)) {
+                      Icon(
+                        Icons.Default.Redo,
+                        contentDescription = "تکرار",
+                        tint = if (history.canRedo) StudioColors.TextPrimary else StudioColors.TextMuted.copy(alpha = 0.4f),
+                        modifier = Modifier.size(19.dp)
+                      )
+                    }
+                    IconButton(onClick = { showTemplateDialog = true }, modifier = Modifier.size(32.dp)) {
+                      Icon(Icons.Default.DashboardCustomize, contentDescription = "قالب‌های آماده", tint = StudioColors.Accent, modifier = Modifier.size(19.dp))
+                    }
+                    IconButton(onClick = { showGrid = !showGrid }, modifier = Modifier.size(32.dp)) {
+                      Icon(
+                        Icons.Default.GridOn,
+                        contentDescription = "شبکه",
+                        tint = if (showGrid) StudioColors.Accent else StudioColors.TextMuted,
+                        modifier = Modifier.size(19.dp)
+                      )
+                    }
+                    IconButton(onClick = { showDimensions = !showDimensions }, modifier = Modifier.size(32.dp)) {
+                      Icon(
+                        Icons.Default.Straighten,
+                        contentDescription = "اندازه‌ها",
+                        tint = if (showDimensions) StudioColors.Accent else StudioColors.TextMuted,
+                        modifier = Modifier.size(19.dp)
+                      )
+                    }
+                    if (canSave) {
+                      IconButton(onClick = { onSaveDesign(design) }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Save, contentDescription = "ذخیره", tint = StudioColors.Success, modifier = Modifier.size(19.dp))
+                      }
+                    }
+                  }
                 }
 
-                // Header Utility Icons
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                  IconButton(enabled = history.canUndo, onClick = { history.undo() }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.Undo, contentDescription = "بازگشت", tint = if (history.canUndo) Color.White else Color.Gray)
-                  }
-                  IconButton(enabled = history.canRedo, onClick = { history.redo() }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.Redo, contentDescription = "تکرار", tint = if (history.canRedo) Color.White else Color.Gray)
-                  }
-                  IconButton(onClick = { showTemplateDialog = true }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.DashboardCustomize, contentDescription = "قالب‌ها", tint = Color(0xFF38BDF8))
-                  }
-                  IconButton(onClick = { showGrid = !showGrid }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.GridOn, contentDescription = "شبکه", tint = if (showGrid) Color(0xFF38BDF8) else Color.Gray)
-                  }
-                  IconButton(onClick = { showDimensions = !showDimensions }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.Straighten, contentDescription = "اندازه‌ها", tint = if (showDimensions) Color(0xFF38BDF8) else Color.Gray)
-                  }
-                  if (canSave) {
-                    IconButton(onClick = { onSaveDesign(design) }, modifier = Modifier.size(34.dp)) {
-                      Icon(Icons.Default.Save, contentDescription = "ذخیره", tint = Color(0xFF10B981))
-                    }
-                  }
-                }
+                // Material selection is always visible: every design is either PVC or aluminum.
+                MaterialSelectionBar(
+                  design = design,
+                  onDesignChange = { design = it },
+                  compact = true
+                )
               }
             }
 
-            // Main Workspace: Left CAD Tools | Center 2D Canvas | Right Element Settings Inspector
+            // Main Workspace: Left tool rail | Center 2D canvas | Right property dock
             Row(modifier = Modifier.fillMaxSize()) {
-              // 1. Left Vertical CAD Toolbar (انتخاب، خط، مستطیل، دایره، چندضلعی، متن، اندازه)
+              // 1. Left vertical tool rail: navigation + structural editing tools
               Surface(
-                color = Color(0xFF0F172A),
+                color = StudioColors.Surface,
                 modifier = Modifier
-                  .width(68.dp)
+                  .width(64.dp)
                   .fillMaxHeight()
-                  .border(1.dp, Color(0xFF1E293B))
+                  .border(1.dp, StudioColors.Outline)
               ) {
                 Column(
                   modifier = Modifier
                     .fillMaxSize()
-                    .padding(vertical = 8.dp),
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 6.dp),
                   horizontalAlignment = Alignment.CenterHorizontally,
-                  verticalArrangement = Arrangement.spacedBy(6.dp)
+                  verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                   CadToolSidebarButton(
                     title = "انتخاب",
@@ -236,47 +294,61 @@ fun WindowDesignerScreen(
                     onClick = { activeCadTool = CadToolType.SELECT }
                   )
                   CadToolSidebarButton(
-                    title = "خط",
-                    icon = Icons.Default.Edit,
+                    title = "تقسیم |",
+                    icon = Icons.Default.VerticalSplit,
                     isSelected = activeCadTool == CadToolType.LINE,
                     onClick = {
                       activeCadTool = CadToolType.LINE
-                      // Add vertical division into currently selected panel
                       design = DesignEditor.split(design, selectedPanelIndex, SplitAxis.VERTICAL)
                     }
                   )
                   CadToolSidebarButton(
-                    title = "مستطیل",
-                    icon = Icons.Default.CropSquare,
+                    title = "تقسیم —",
+                    icon = Icons.Default.HorizontalSplit,
                     isSelected = activeCadTool == CadToolType.RECTANGLE,
                     onClick = {
                       activeCadTool = CadToolType.RECTANGLE
-                      design = DesignEditor.setShape(design, WindowShape.RECTANGLE)
+                      design = DesignEditor.split(design, selectedPanelIndex, SplitAxis.HORIZONTAL)
                     }
                   )
                   CadToolSidebarButton(
-                    title = "دایره",
-                    icon = Icons.Default.ChangeHistory,
-                    isSelected = activeCadTool == CadToolType.CIRCLE,
+                    title = "قوس",
+                    icon = Icons.Default.Architecture,
+                    isSelected = design.windowShape == WindowShape.ARCHED,
                     onClick = {
-                      activeCadTool = CadToolType.CIRCLE
-                      design = DesignEditor.setShape(design, WindowShape.ARCHED, 350)
+                      design = DesignEditor.setShape(
+                        design,
+                        if (design.windowShape == WindowShape.ARCHED) WindowShape.RECTANGLE else WindowShape.ARCHED,
+                        350
+                      )
                     }
                   )
                   CadToolSidebarButton(
-                    title = "چندضلعی",
-                    icon = Icons.Default.Hexagon,
-                    isSelected = activeCadTool == CadToolType.POLYGON,
+                    title = "شیب‌دار",
+                    icon = Icons.Default.Roofing,
+                    isSelected = design.windowShape == WindowShape.TRAPEZOIDAL || design.windowShape == WindowShape.TRIANGLE,
                     onClick = {
-                      activeCadTool = CadToolType.POLYGON
-                      design = DesignEditor.setShape(design, WindowShape.TRIANGLE, 400)
+                      design = DesignEditor.setShape(
+                        design,
+                        if (design.windowShape == WindowShape.TRAPEZOIDAL) WindowShape.RECTANGLE else WindowShape.TRAPEZOIDAL,
+                        400
+                      )
                     }
                   )
                   CadToolSidebarButton(
-                    title = "متن",
-                    icon = Icons.Default.TextFields,
-                    isSelected = activeCadTool == CadToolType.TEXT,
-                    onClick = { activeCadTool = CadToolType.TEXT }
+                    title = "کتیبه",
+                    icon = Icons.Default.Splitscreen,
+                    isSelected = design.hasTransom,
+                    onClick = {
+                      design = if (design.hasTransom) design.copy(hasTransom = false)
+                      else DesignEditor.setTransomHeightMm(design, design.transomHeightMm.coerceAtMost(design.heightMm - 300))
+                    }
+                  )
+                  CadToolSidebarButton(
+                    title = "دستگیره",
+                    icon = Icons.Default.PanToolAlt,
+                    isSelected = activeCadTool == CadToolType.HANDLE,
+                    onClick = { activeCadTool = if (activeCadTool == CadToolType.HANDLE) CadToolType.SELECT else CadToolType.HANDLE }
                   )
                   CadToolSidebarButton(
                     title = "اندازه",
@@ -287,199 +359,189 @@ fun WindowDesignerScreen(
                       editingDimension = DimensionEditTarget.OverallWidth(design.widthMm)
                     }
                   )
+                  HorizontalDivider(color = StudioColors.Outline, modifier = Modifier.padding(horizontal = 12.dp))
+                  CadToolSidebarButton(
+                    title = "قالب",
+                    icon = Icons.Default.DashboardCustomize,
+                    isSelected = false,
+                    onClick = { showTemplateDialog = true }
+                  )
+                  CadToolSidebarButton(
+                    title = "SVG",
+                    icon = Icons.Default.Download,
+                    isSelected = false,
+                    onClick = {
+                      pendingSvg = DesignSvgExporter.export(design)
+                      svgExport.launch("window-${design.widthMm}x${design.heightMm}.svg")
+                    }
+                  )
                 }
               }
 
-              // 2. Center 2D CAD Canvas
-              Box(
+              // 2. Center workspace: toolbar strip, canvas and live info badges
+              Column(
                 modifier = Modifier
                   .weight(1f)
                   .fillMaxHeight()
+                  .background(StudioColors.Background)
               ) {
-                Elevation2DCanvas(
-                  design = design,
-                  activeTool = activeCadTool,
-                  selectedPanelIndex = selectedPanelIndex,
-                  onSelectPanel = { selectedPanelIndex = it },
+                CanvasToolStrip(
+                  viewMode = canvasViewMode,
+                  onChangeViewMode = { canvasViewMode = it },
+                  snapStepMm = snapStepMm,
+                  onChangeSnap = { snapStepMm = it },
+                  zoom = zoomFactor,
+                  onResetZoom = { resetZoom() },
                   showGrid = showGrid,
-                  showDimensions = showDimensions,
-                  onPlaceHandle = { idx, x, y ->
-                    design = design.copy(
-                      panels = design.panels.mapIndexed { i, panel ->
-                        if (i == idx) panel.copy(hasHandle = true, handleX = x, handleY = y) else panel
-                      }
-                    )
-                  },
-                  onEditWidth = { editingDimension = DimensionEditTarget.OverallWidth(design.widthMm) },
-                  onEditHeight = { editingDimension = DimensionEditTarget.OverallHeight(design.heightMm) },
-                  onEditTransomHeight = if (design.hasTransom) ({
-                    editingDimension = DimensionEditTarget.TransomHeight(design.transomHeightMm)
-                  }) else null,
-                  onEditPanelWidth = { idx ->
-                    val w = geometry.panels.getOrNull(idx)?.widthMm?.toInt() ?: 400
-                    editingDimension = DimensionEditTarget.PanelWidth(idx, w)
-                  },
-                  onMoveDivider = { dividerIdx, newFraction ->
-                    design = DesignEditor.resizeParent(design, dividerIdx, newFraction)
-                  },
-                  modifier = Modifier.fillMaxSize()
+                  onToggleGrid = { showGrid = !showGrid }
                 )
+
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                  Elevation2DCanvas(
+                    design = design,
+                    activeTool = activeCadTool,
+                    selectedPanelIndex = selectedPanelIndex,
+                    onSelectPanel = { selectedPanelIndex = it },
+                    showGrid = showGrid,
+                    showDimensions = showDimensions,
+                    snapStepMm = snapStepMm,
+                    viewMode = canvasViewMode,
+                    onTransformState = { zoom, reset ->
+                      zoomFactor = zoom
+                      resetZoom = reset
+                    },
+                    onPlaceHandle = { idx, x, y ->
+                      // A tap only relocates the handle while the handle tool is active.
+                      if (activeCadTool == CadToolType.HANDLE) {
+                        design = DesignEditor.updatePanel(design, idx) {
+                          it.copy(hasHandle = true, handleX = x, handleY = y)
+                        }
+                      }
+                    },
+                    onEditWidth = { editingDimension = DimensionEditTarget.OverallWidth(design.widthMm) },
+                    onEditHeight = { editingDimension = DimensionEditTarget.OverallHeight(design.heightMm) },
+                    onEditTransomHeight = if (design.hasTransom) ({
+                      editingDimension = DimensionEditTarget.TransomHeight(design.transomHeightMm)
+                    }) else null,
+                    onEditPanelWidth = { idx ->
+                      val w = geometry.panels.getOrNull(idx)?.widthMm?.toInt() ?: 400
+                      editingDimension = DimensionEditTarget.PanelWidth(idx, w)
+                    },
+                    onMoveDivider = { dividerIdx, newFraction ->
+                      design = DesignEditor.resizeParent(design, dividerIdx, newFraction)
+                    },
+                    modifier = Modifier.fillMaxSize()
+                  )
+
+                  // Live dimension badge (top-left of the canvas)
+                  Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = StudioColors.Surface.copy(alpha = 0.92f),
+                    modifier = Modifier
+                      .align(Alignment.TopStart)
+                      .padding(10.dp)
+                  ) {
+                    Text(
+                      text = "${CurrencyHelper.toPersianDigits(design.widthMm)} × ${CurrencyHelper.toPersianDigits(design.heightMm)} mm  •  " +
+                        "${CurrencyHelper.toPersianDigits(areaM2.setScale(2, RoundingMode.HALF_UP).toString())} m²",
+                      style = MaterialTheme.typography.labelSmall,
+                      color = StudioColors.TextPrimary,
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                  }
+
+                  // Material badge (top-right of the canvas) — reminds which rules apply
+                  Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = materialAccent.copy(alpha = 0.92f),
+                    modifier = Modifier
+                      .align(Alignment.TopEnd)
+                      .padding(10.dp)
+                  ) {
+                    Text(
+                      text = MaterialCatalog.familyTitle(design.materialFamily),
+                      style = MaterialTheme.typography.labelSmall,
+                      fontWeight = FontWeight.Bold,
+                      color = Color.White,
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                  }
+                }
+
+                // Live summary strip below the canvas
+                Surface(color = StudioColors.Surface, modifier = Modifier.fillMaxWidth()) {
+                  Row(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .horizontalScroll(rememberScrollState())
+                      .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                  ) {
+                    StudioMetric("طول پروفیل", "${CurrencyHelper.toPersianDigits(profileMeters.toString())} m")
+                    StudioMetric("شیشه", "${mfgResult.glassPieces.size} جام")
+                    StudioMetric("گالوانیزه", if (design.materialFamily == MaterialFamily.UPVC) "${mfgResult.reinforcementCuts.sumOf { it.lengthMm }} mm" else "ندارد")
+                    StudioMetric("لنگه", "${CurrencyHelper.toPersianDigits(design.panels.size)}")
+                    StudioMetric("قیمت", CurrencyHelper.formatMoney(estimate.quotationPrice, estimate.currency))
+                  }
+                }
               }
 
-              // 3. Right Property Inspector ("تنظیمات المان" - Matching Reference Top-Left)
+              // 3. Right property dock: opening inspector / design properties
               Surface(
-                color = Color(0xFF0F172A),
+                color = StudioColors.Surface,
                 modifier = Modifier
-                  .width(220.dp)
+                  .width(272.dp)
                   .fillMaxHeight()
-                  .border(1.dp, Color(0xFF1E293B))
+                  .border(1.dp, StudioColors.Outline)
               ) {
                 Column(
                   modifier = Modifier
                     .fillMaxSize()
-                    .padding(12.dp)
-                    .verticalScroll(rememberScrollState()),
-                  verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(10.dp),
+                  verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                  Text(
-                    text = "تنظیمات المان",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                  )
-
-                  // نوع بازشو (Opening Type)
-                  Text("نوع بازشو", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
-                  val selectedPanel = design.panels.getOrNull(selectedPanelIndex) ?: design.panels.firstOrNull()
-                  val activeOpening = selectedPanel?.openingType ?: OpeningType.FIXED
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                  ) {
-                    OpeningTypeCardButton(
-                      title = "ثابت",
-                      icon = Icons.Default.CropSquare,
-                      isSelected = activeOpening == OpeningType.FIXED,
-                      onClick = {
-                        design = DesignEditor.updatePanel(design, selectedPanelIndex) { it.copy(openingType = OpeningType.FIXED) }
-                      },
-                      modifier = Modifier.weight(1f)
-                    )
-                    OpeningTypeCardButton(
-                      title = "لولایی",
-                      icon = Icons.Default.MeetingRoom,
-                      isSelected = activeOpening == OpeningType.CASEMENT_LEFT || activeOpening == OpeningType.CASEMENT_RIGHT,
-                      onClick = {
-                        design = DesignEditor.updatePanel(design, selectedPanelIndex) { it.copy(openingType = OpeningType.CASEMENT_LEFT) }
-                      },
-                      modifier = Modifier.weight(1f)
-                    )
-                    OpeningTypeCardButton(
-                      title = "کشویی",
-                      icon = Icons.Default.DoorSliding,
-                      isSelected = activeOpening == OpeningType.SLIDING_LEFT || activeOpening == OpeningType.SLIDING_RIGHT,
-                      onClick = {
-                        design = DesignEditor.updatePanel(design, selectedPanelIndex) { it.copy(openingType = OpeningType.SLIDING_LEFT) }
-                      },
-                      modifier = Modifier.weight(1f)
-                    )
-                  }
-
-                  HorizontalDivider(color = Color(0xFF1E293B))
-
-                  // پروفیل (Color Swatches Palette)
-                  Text("پروفیل", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
-                  val colorSwatches = listOf(
-                    0xFFF8FAFC, 0xFFE2E8F0, 0xFF94A3B8, 0xFF334155, 0xFF1E293B,
-                    0xFF5D4037, 0xFF8D6E63, 0xFFB45309
-                  )
-                  Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (chunk in colorSwatches.chunked(4)) {
-                      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        chunk.forEach { hex ->
-                          val isChosen = (design.customColorHex ?: design.frameFinish.colorHex) == hex
-                          Box(
-                            modifier = Modifier
-                              .size(34.dp)
-                              .clip(RoundedCornerShape(6.dp))
-                              .background(Color(hex))
-                              .border(
-                                width = if (isChosen) 2.5f.dp else 1.dp,
-                                color = if (isChosen) Color(0xFF0284C7) else Color(0xFF475569),
-                                shape = RoundedCornerShape(6.dp)
-                              )
-                              .clickable {
-                                design = design.copy(customColorHex = hex)
-                              }
-                          )
-                        }
+                  Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                    listOf("لنگهٔ انتخابی", "طرح").forEachIndexed { index, title ->
+                      Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (inspectorTab == index) StudioColors.AccentStrong else StudioColors.SurfaceRaised,
+                        modifier = Modifier
+                          .weight(1f)
+                          .clip(RoundedCornerShape(8.dp))
+                          .clickable { inspectorTab = index }
+                      ) {
+                        Text(
+                          text = title,
+                          style = MaterialTheme.typography.labelMedium,
+                          fontWeight = if (inspectorTab == index) FontWeight.Bold else FontWeight.Normal,
+                          color = if (inspectorTab == index) Color.White else StudioColors.TextMuted,
+                          modifier = Modifier.padding(vertical = 7.dp),
+                          textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
                       }
                     }
                   }
 
-                  HorizontalDivider(color = Color(0xFF1E293B))
-
-                  // نوع شیشه (Glass Tints)
-                  Text("نوع شیشه", style = MaterialTheme.typography.labelSmall, color = Color(0xFF94A3B8))
-                  Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(
-                      GlassTint.CLEAR,
-                      GlassTint.REFLECTIVE_BLUE,
-                      GlassTint.BRONZE,
-                      GlassTint.FROSTED
-                    ).forEach { tint ->
-                      val isSelected = design.outerGlassTint == tint
-                      Box(
-                        modifier = Modifier
-                          .weight(1f)
-                          .height(34.dp)
-                          .clip(RoundedCornerShape(6.dp))
-                          .background(Color(tint.colorHex).copy(alpha = 0.65f))
-                        .border(
-                          width = if (isSelected) 2.5f.dp else 1.dp,
-                          color = if (isSelected) Color(0xFF0284C7) else Color(0xFF475569),
-                          shape = RoundedCornerShape(6.dp)
-                        )
-                        .clickable {
-                          design = design.copy(outerGlassTint = tint)
+                  Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (inspectorTab == 0) {
+                      OpeningInspector(
+                        design = design,
+                        selectedIndex = selectedPanelIndex,
+                        onDesignChange = { design = it },
+                        onSelect = { selectedPanelIndex = it },
+                        onEditPanelWidth = { idx ->
+                          val w = geometry.panels.getOrNull(idx)?.widthMm?.toInt() ?: 400
+                          editingDimension = DimensionEditTarget.PanelWidth(idx, w)
                         }
                       )
-                    }
-                  }
-
-                  // Glazing Specification Selector
-                  Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF1E293B),
-                    modifier = Modifier.fillMaxWidth()
-                  ) {
-                    Row(
-                      modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                      horizontalArrangement = Arrangement.SpaceBetween,
-                      verticalAlignment = Alignment.CenterVertically
-                    ) {
-                      Text(
-                        text = "دوجداره Low-E",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White
+                    } else {
+                      DesignPropertiesPanel(
+                        design = design,
+                        onDesignChange = { design = it },
+                        onEditWidth = { editingDimension = DimensionEditTarget.OverallWidth(design.widthMm) },
+                        onEditHeight = { editingDimension = DimensionEditTarget.OverallHeight(design.heightMm) }
                       )
-                      Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
                     }
-                  }
-
-                  // Decorative French Georgian Grids Toggle
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Text("پنجره فرانسوی (شبکه‌دار):", style = MaterialTheme.typography.bodySmall, color = Color.White)
-                    Switch(
-                      checked = design.hasGrids,
-                      onCheckedChange = { design = design.copy(hasGrids = it) }
-                    )
                   }
                 }
               }
@@ -505,11 +567,11 @@ fun WindowDesignerScreen(
           Column(
             modifier = Modifier
               .fillMaxSize()
-              .background(Color(0xFF0F172A))
+              .background(StudioColors.Background)
           ) {
             // Header Bar
             Surface(
-              color = Color(0xFF1E293B),
+              color = StudioColors.SurfaceRaised,
               modifier = Modifier.fillMaxWidth()
             ) {
               Row(
@@ -520,7 +582,7 @@ fun WindowDesignerScreen(
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                  Icon(Icons.Default.Calculate, contentDescription = null, tint = Color(0xFF0284C7))
+                  Icon(Icons.Default.Calculate, contentDescription = null, tint = StudioColors.Accent)
                   Text(
                     text = "مشخصات و محاسبات",
                     style = MaterialTheme.typography.titleMedium,
@@ -536,7 +598,7 @@ fun WindowDesignerScreen(
 
             // Top Sub-Tabs: [مشخصات] [برش پروفیل] [برش شیشه] [یراق‌آلات] [گزارش]
             Surface(
-              color = Color(0xFF0F172A),
+              color = StudioColors.Surface,
               modifier = Modifier.fillMaxWidth()
             ) {
               Row(
@@ -550,7 +612,7 @@ fun WindowDesignerScreen(
                   val isSelected = currentSpecsSubTab == subTab
                   Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                    color = if (isSelected) StudioColors.AccentStrong else StudioColors.SurfaceRaised,
                     modifier = Modifier
                       .clip(RoundedCornerShape(8.dp))
                       .clickable { currentSpecsSubTab = subTab }
@@ -600,7 +662,7 @@ fun WindowDesignerScreen(
                     // Center: 3D perspective preview
                     Surface(
                       shape = RoundedCornerShape(12.dp),
-                      color = Color(0xFF1E293B),
+                      color = StudioColors.SurfaceRaised,
                       modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
@@ -614,7 +676,7 @@ fun WindowDesignerScreen(
                     // Right: Specifications Data Card (Matching Reference Table)
                     Surface(
                       shape = RoundedCornerShape(12.dp),
-                      color = Color(0xFF1E293B),
+                      color = StudioColors.SurfaceRaised,
                       modifier = Modifier
                         .width(280.dp)
                         .fillMaxHeight()
@@ -627,6 +689,12 @@ fun WindowDesignerScreen(
                           .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                       ) {
+                        SpecDataRow("جنس سازه", MaterialCatalog.familyTitle(design.materialFamily))
+                        SpecDataRow("سیستم پروفیل", currentSystem.code)
+                        SpecDataRow("عرض نمای پروفیل", "${CurrencyHelper.toPersianDigits(currentSystem.faceWidthMm)} mm")
+                        if (design.materialFamily == MaterialFamily.ALUMINUM) {
+                          SpecDataRow("پل حرارتی", if (design.hasThermalBreak) "دارد" else "ندارد")
+                        }
                         SpecDataRow("ابعاد کل", "${CurrencyHelper.toPersianDigits(design.widthMm)} × ${CurrencyHelper.toPersianDigits(design.heightMm)} mm")
                         SpecDataRow("مساحت شیشه", "${CurrencyHelper.toPersianDigits(areaM2.setScale(2, RoundingMode.HALF_UP).toString())} m²")
                         SpecDataRow("طول پروفیل", "${CurrencyHelper.toPersianDigits(profileMeters.toString())} m")
@@ -648,7 +716,7 @@ fun WindowDesignerScreen(
                     items(mfgResult.profileCuts) { cut ->
                       Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF1E293B),
+                        color = StudioColors.SurfaceRaised,
                         modifier = Modifier.fillMaxWidth()
                       ) {
                         Row(
@@ -675,7 +743,7 @@ fun WindowDesignerScreen(
                     items(mfgResult.glassPieces) { glass ->
                       Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF1E293B),
+                        color = StudioColors.SurfaceRaised,
                         modifier = Modifier.fillMaxWidth()
                       ) {
                         Row(
@@ -702,7 +770,7 @@ fun WindowDesignerScreen(
                     items(estimate.bomItems.filter { it.category == "یراق‌آلات" || it.category == "اتصالات" }) { item ->
                       Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF1E293B),
+                        color = StudioColors.SurfaceRaised,
                         modifier = Modifier.fillMaxWidth()
                       ) {
                         Row(
@@ -721,7 +789,7 @@ fun WindowDesignerScreen(
                 SpecsTab.REPORT -> {
                   Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF1E293B),
+                    color = StudioColors.SurfaceRaised,
                     modifier = Modifier.fillMaxSize()
                   ) {
                     Column(
@@ -736,7 +804,10 @@ fun WindowDesignerScreen(
                       SpecDataRow("هزینه پروفیل:", CurrencyHelper.formatMoney(estimate.profileCost, estimate.currency))
                       SpecDataRow("هزینه شیشه:", CurrencyHelper.formatMoney(estimate.glassCost, estimate.currency))
                       SpecDataRow("هزینه یراق‌آلات:", CurrencyHelper.formatMoney(estimate.hardwareCost, estimate.currency))
-                      SpecDataRow("هزینه گالوانیزه:", CurrencyHelper.formatMoney(estimate.reinforcementCost, estimate.currency))
+                      SpecDataRow(
+                        if (design.materialFamily == MaterialFamily.UPVC) "هزینه گالوانیزه:" else "هزینه پل حرارتی:",
+                        CurrencyHelper.formatMoney(estimate.reinforcementCost, estimate.currency)
+                      )
                       SpecDataRow("دستمزد ساخت و نصب:", CurrencyHelper.formatMoney(estimate.laborCost.add(estimate.installationCost), estimate.currency))
                       HorizontalDivider(color = Color(0xFF334155))
                       SpecDataRow("مجموع کل هزینه:", CurrencyHelper.formatMoney(estimate.totalBaseCost, estimate.currency))
@@ -749,7 +820,7 @@ fun WindowDesignerScreen(
 
             // Bottom Action Bar (Matching Reference Image: [اشتراک‌گذاری] [خروجی PDF] [ذخیره پروژه])
             Surface(
-              color = Color(0xFF1E293B),
+              color = StudioColors.SurfaceRaised,
               tonalElevation = 6.dp,
               modifier = Modifier.fillMaxWidth()
             ) {
@@ -853,7 +924,7 @@ private fun PrimaryModeTabButton(
 ) {
   Surface(
     shape = RoundedCornerShape(10.dp),
-    color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+    color = if (isSelected) StudioColors.AccentStrong else StudioColors.SurfaceRaised,
     modifier = modifier
       .height(44.dp)
       .clip(RoundedCornerShape(10.dp))
@@ -864,14 +935,114 @@ private fun PrimaryModeTabButton(
       horizontalArrangement = Arrangement.Center,
       verticalAlignment = Alignment.CenterVertically
     ) {
-      Icon(icon, contentDescription = null, tint = if (isSelected) Color.White else Color(0xFF94A3B8), modifier = Modifier.size(20.dp))
+      Icon(icon, contentDescription = null, tint = if (isSelected) Color.White else StudioColors.TextMuted, modifier = Modifier.size(20.dp))
       Spacer(modifier = Modifier.width(8.dp))
       Text(
         text = title,
         style = MaterialTheme.typography.titleSmall,
         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-        color = if (isSelected) Color.White else Color(0xFFCBD5E1)
+        color = if (isSelected) Color.White else StudioColors.TextPrimary
       )
+    }
+  }
+}
+
+@Composable
+private fun StudioMetric(label: String, value: String) {
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Text(label, style = MaterialTheme.typography.labelSmall, color = StudioColors.TextMuted)
+    Text(value, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = StudioColors.TextPrimary)
+  }
+}
+
+/**
+ * Thin toolbar above the canvas: technical view mode (body / representation / glass heat), snap step
+ * and zoom readout. Keeps the canvas itself free of chrome so the drawing stays the focus.
+ */
+@Composable
+private fun CanvasToolStrip(
+  viewMode: CanvasViewMode,
+  onChangeViewMode: (CanvasViewMode) -> Unit,
+  snapStepMm: Int,
+  onChangeSnap: (Int) -> Unit,
+  zoom: Float,
+  onResetZoom: () -> Unit,
+  showGrid: Boolean,
+  onToggleGrid: () -> Unit
+) {
+  Surface(color = StudioColors.SurfaceRaised, modifier = Modifier.fillMaxWidth()) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .horizontalScroll(rememberScrollState())
+        .padding(horizontal = 8.dp, vertical = 5.dp),
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      CanvasViewMode.entries.forEach { mode ->
+        val icon = when (mode) {
+          CanvasViewMode.BODY -> Icons.Default.DoorFront
+          CanvasViewMode.REPRESENTATION -> Icons.Default.SquareFoot
+          CanvasViewMode.GLASS_HEAT -> Icons.Default.Thermostat
+        }
+        Surface(
+          shape = RoundedCornerShape(7.dp),
+          color = if (viewMode == mode) StudioColors.AccentStrong else Color.Transparent,
+          modifier = Modifier
+            .clip(RoundedCornerShape(7.dp))
+            .clickable { onChangeViewMode(mode) }
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+          ) {
+            Icon(
+              icon,
+              contentDescription = mode.titleFa,
+              tint = if (viewMode == mode) Color.White else StudioColors.TextMuted,
+              modifier = Modifier.size(15.dp)
+            )
+            Text(
+              mode.titleFa,
+              style = MaterialTheme.typography.labelSmall,
+              color = if (viewMode == mode) Color.White else StudioColors.TextMuted
+            )
+          }
+        }
+      }
+
+      VerticalDivider(color = StudioColors.Outline, modifier = Modifier.height(20.dp))
+
+      Text("Snap", style = MaterialTheme.typography.labelSmall, color = StudioColors.TextMuted)
+      listOf(1, 10, 50).forEach { step ->
+        FilterChip(
+          selected = snapStepMm == step,
+          onClick = { onChangeSnap(step) },
+          label = { Text(if (step == 1) "آزاد" else "${CurrencyHelper.toPersianDigits(step)} mm", style = MaterialTheme.typography.labelSmall) },
+          modifier = Modifier.height(28.dp)
+        )
+      }
+
+      VerticalDivider(color = StudioColors.Outline, modifier = Modifier.height(20.dp))
+
+      TextButton(onClick = onResetZoom, contentPadding = PaddingValues(horizontal = 6.dp)) {
+        Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = StudioColors.Accent, modifier = Modifier.size(16.dp))
+        Spacer(modifier = Modifier.width(3.dp))
+        Text(
+          "${CurrencyHelper.toPersianDigits((zoom * 100).toInt())}٪",
+          style = MaterialTheme.typography.labelSmall,
+          color = StudioColors.TextPrimary
+        )
+      }
+      IconButton(onClick = onToggleGrid, modifier = Modifier.size(30.dp)) {
+        Icon(
+          Icons.Default.GridOn,
+          contentDescription = "شبکه",
+          tint = if (showGrid) StudioColors.Accent else StudioColors.TextMuted,
+          modifier = Modifier.size(17.dp)
+        )
+      }
     }
   }
 }
@@ -907,40 +1078,14 @@ private fun CadToolSidebarButton(
   }
 }
 
-@Composable
-private fun OpeningTypeCardButton(
-  title: String,
-  icon: ImageVector,
-  isSelected: Boolean,
-  onClick: () -> Unit,
-  modifier: Modifier = Modifier
-) {
-  Surface(
-    shape = RoundedCornerShape(8.dp),
-    color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
-    modifier = modifier
-      .height(56.dp)
-      .clip(RoundedCornerShape(8.dp))
-      .clickable(onClick = onClick)
-  ) {
-    Column(
-      modifier = Modifier.fillMaxSize(),
-      horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.Center
-    ) {
-      Icon(icon, contentDescription = null, tint = if (isSelected) Color.White else Color.Gray, modifier = Modifier.size(20.dp))
-      Spacer(modifier = Modifier.height(2.dp))
-      Text(text = title, style = MaterialTheme.typography.labelSmall, color = if (isSelected) Color.White else Color(0xFF94A3B8))
-    }
-  }
-}
+
 
 @Composable
 private fun SpecDataRow(label: String, value: String) {
   Row(
     modifier = Modifier
       .fillMaxWidth()
-      .background(Color(0xFF0F172A), RoundedCornerShape(6.dp))
+      .background(StudioColors.Background, RoundedCornerShape(6.dp))
       .padding(horizontal = 10.dp, vertical = 8.dp),
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically
