@@ -35,12 +35,22 @@ import com.example.domain.model.WindowShape
 
 enum class CadToolType(val titleFa: String) {
   SELECT("انتخاب"),
-  LINE("خط"),
+  LINE("تقسیم عمودی"),
   RECTANGLE("مستطیل"),
   CIRCLE("دایره"),
   POLYGON("چندضلعی"),
   TEXT("متن"),
-  DIMENSION("اندازه")
+  DIMENSION("اندازه"),
+  GRID("شبکه"),
+  HANDLE("دستگیره"),
+  PAN("جابجایی")
+}
+
+/** Optional technical layer drawn on the canvas. */
+enum class CanvasViewMode(val titleFa: String) {
+  BODY("جسم"),
+  REPRESENTATION("نماى فني"),
+  GLASS_HEAT("شيشه و عايق")
 }
 
 @Composable
@@ -58,6 +68,11 @@ fun Elevation2DCanvas(
   onEditPanelWidth: ((Int) -> Unit)? = null,
   onMoveDivider: ((Int, Float) -> Unit)? = null,
   snapGuideFraction: Float? = null,
+  /** Snap divider drags and taps to a millimeter step (10 mm by default). */
+  snapStepMm: Int = 10,
+  viewMode: CanvasViewMode = CanvasViewMode.BODY,
+  /** Receives live zoom factor and a reset callback so the toolbar can offer identical controls. */
+  onTransformState: ((Float, () -> Unit) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   val geom = GeometryEngine.computeGeometry(design)
@@ -72,6 +87,13 @@ fun Elevation2DCanvas(
     panOffset += offsetChange
   }
 
+  val requestReset = {
+    scaleFactor = 1.0f
+    panOffset = Offset.Zero
+  }
+  // Expose the live zoom factor (state read) and a reset action to the surrounding toolbar.
+  onTransformState?.invoke(scaleFactor, requestReset)
+
   val baseFrameColorHex = design.customColorHex ?: design.frameFinish.colorHex
   val frameColor = Color(baseFrameColorHex)
   val sashColor = design.sashFinish.let { Color(it.colorHex) }
@@ -85,11 +107,16 @@ fun Elevation2DCanvas(
   val frameBorderColor = if (isDarkFrame) Color(0xFF1E293B) else Color(0xFF475569)
   val beadBorderColor = if (isDarkFrame) Color(0xFF334155) else Color(0xFF94A3B8)
   val outerGlassColor = Color(design.outerGlassTint.colorHex).copy(alpha = 0.28f)
+  // Aluminum is drawn with sharper, cooler technical lines; PVC with warmer weld-ready lines.
+  val isAluminum = design.materialFamily == com.example.domain.model.MaterialFamily.ALUMINUM
+  val frameCentroidColor = if (isAluminum) Color(0xFFB45309) else Color(0xFF0369A1)
 
   Box(
     modifier = modifier
       .fillMaxWidth()
-      .background(Color(0xFFF8FAFC))
+      .background(
+        if (viewMode == CanvasViewMode.REPRESENTATION) Color(0xFF060B14) else Color(0xFFF8FAFC)
+      )
   ) {
     Canvas(
       modifier = Modifier
@@ -184,7 +211,10 @@ fun Elevation2DCanvas(
 
                 if (tapOffset.x in pX..(pX + pW) && tapOffset.y in pY..(pY + pH)) {
                   onSelectPanel?.invoke(idx)
-                  if (p.isSash) onPlaceHandle?.invoke(
+                  // Only operables receive a dragged handle; fixed panes ignore the placement tap.
+                  val isOperable = design.panels.getOrNull(idx)?.openingType != OpeningType.FIXED &&
+                    design.panels.getOrNull(idx)?.openingType != null
+                  if (p.isSash && isOperable) onPlaceHandle?.invoke(
                     idx,
                     ((tapOffset.x - pX) / pW).coerceIn(0.02f, 0.98f),
                     ((tapOffset.y - pY) / pH).coerceIn(0.02f, 0.98f)
@@ -217,7 +247,7 @@ fun Elevation2DCanvas(
       val beadWidth = 14f * fitScale
 
       // 1. Technical CAD Grid with sub-grid
-      if (showGrid) drawCadGrid(canvasW, canvasH)
+      if (showGrid) drawCadGrid(canvasW, canvasH, dark = viewMode == CanvasViewMode.REPRESENTATION, snapStepMm = snapStepMm)
 
       // 2. Outer Frame Profile by Shape
       when (design.windowShape) {
@@ -226,11 +256,23 @@ fun Elevation2DCanvas(
           drawRect(frameColor, Offset(originX, originY), Size(frameW, frameH))
           drawRect(frameBorderColor, Offset(originX, originY), Size(frameW, frameH), style = Stroke(width = 2.5f))
 
-          // 45° Mitre corner cut lines
+          // 45° mitre corner lines. Aluminum is mechanically jointed, so each corner also gets
+          // a small cleat mark that PVC (welded) never shows.
           drawLine(frameBorderColor, Offset(originX, originY), Offset(originX + frameFace, originY + frameFace), 1.5f)
           drawLine(frameBorderColor, Offset(originX + frameW, originY), Offset(originX + frameW - frameFace, originY + frameFace), 1.5f)
           drawLine(frameBorderColor, Offset(originX, originY + frameH), Offset(originX + frameFace, originY + frameH - frameFace), 1.5f)
           drawLine(frameBorderColor, Offset(originX + frameW, originY + frameH), Offset(originX + frameW - frameFace, originY + frameH - frameFace), 1.5f)
+          if (isAluminum) {
+            listOf(
+              Offset(originX + frameFace * 0.3f, originY + frameFace * 0.3f) to Offset(originX + frameFace, originY + frameFace),
+              Offset(originX + frameW - frameFace * 0.3f, originY + frameFace * 0.3f) to Offset(originX + frameW - frameFace, originY + frameFace),
+              Offset(originX + frameFace * 0.3f, originY + frameH - frameFace * 0.3f) to Offset(originX + frameFace, originY + frameH - frameFace),
+              Offset(originX + frameW - frameFace * 0.3f, originY + frameH - frameFace * 0.3f) to Offset(originX + frameW - frameFace, originY + frameH - frameFace)
+            ).forEach { (a, b) ->
+              drawLine(frameCentroidColor, a, b, 1f)
+              drawCircle(frameCentroidColor, 2.2f, (a + b) / 2f, style = Stroke(1f))
+            }
+          }
 
           // Inner frame perimeter line
           drawRect(frameBorderColor, Offset(originX + frameFace, originY + frameFace), Size(frameW - frameFace * 2, frameH - frameFace * 2), style = Stroke(width = 1.5f))
@@ -280,8 +322,12 @@ fun Elevation2DCanvas(
         val opening = panelConfig?.openingType ?: OpeningType.FIXED
         val isSelected = selectedPanelIndex == idx
 
-        // Glass pane background
-        val panelGlassColor = Color(panelConfig?.glassTint?.colorHex ?: design.outerGlassTint.colorHex).copy(alpha = 0.28f)
+        // Glass pane background (heat view colors each pane by its glazing U-value class)
+        val panelGlassColor = if (viewMode == CanvasViewMode.GLASS_HEAT) {
+          val heat = 0.14f + (panelConfig?.glazingType?.thicknessMm ?: 20) / 160f
+          Color(panelConfig?.glassTint?.colorHex ?: design.outerGlassTint.colorHex)
+            .copy(alpha = heat.coerceIn(0.12f, 0.62f))
+        } else Color(panelConfig?.glassTint?.colorHex ?: design.outerGlassTint.colorHex).copy(alpha = 0.28f)
         drawRect(panelGlassColor, Offset(pX, pY), Size(pW, pH))
         drawRect(frameBorderColor, Offset(pX, pY), Size(pW, pH), style = Stroke(width = 1.5f))
 
@@ -318,7 +364,6 @@ fun Elevation2DCanvas(
 
           // Hardware Handle
           if (panelConfig?.hasHandle != false) {
-            val isLeftHinged = opening == OpeningType.CASEMENT_LEFT
             val defaultX = when (opening) {
               OpeningType.CASEMENT_LEFT -> 1f - sashFace / (2f * pW)
               OpeningType.TOP_HUNG, OpeningType.TILT -> 0.5f
@@ -353,6 +398,13 @@ fun Elevation2DCanvas(
             size = Size(pW + 6f, pH + 6f),
             style = Stroke(width = 3.5f)
           )
+          // Corner grips hint that the panel is editable / resizable
+          listOf(
+            Offset(pX, pY), Offset(pX + pW, pY), Offset(pX, pY + pH), Offset(pX + pW, pY + pH)
+          ).forEach { c ->
+            drawRect(Color.White, Offset(c.x - 3.5f, c.y - 3.5f), Size(7f, 7f))
+            drawRect(Color(0xFF0284C7), Offset(c.x - 3.5f, c.y - 3.5f), Size(7f, 7f), style = Stroke(1.6f))
+          }
         }
       }
 
@@ -420,11 +472,11 @@ fun Elevation2DCanvas(
   }
 }
 
-private fun DrawScope.drawCadGrid(w: Float, h: Float) {
-  val majorGridColor = Color(0xFFCBD5E1)
-  val minorGridColor = Color(0xFFF1F5F9)
+private fun DrawScope.drawCadGrid(w: Float, h: Float, dark: Boolean = false, snapStepMm: Int = 10) {
+  val majorGridColor = if (dark) Color(0xFF1E3A5F) else Color(0xFFCBD5E1)
+  val minorGridColor = if (dark) Color(0xFF122237) else Color(0xFFF1F5F9)
   val minorStep = 20f
-  val majorStep = 100f
+  val majorStep = if (snapStepMm in 5..100) (snapStepMm * 5).toFloat() else 100f
 
   var x = 0f
   while (x < w) {
