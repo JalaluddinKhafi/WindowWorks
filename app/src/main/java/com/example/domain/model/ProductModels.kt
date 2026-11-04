@@ -75,6 +75,94 @@ enum class CoatingType(val id: String, val titlePersian: String) {
   ANODIZED("ANODIZED", "آنودایز متالیک")
 }
 
+/**
+ * Profile systems offered per material family. A design always carries one material family and one
+ * of its profile systems so manufacturing, pricing and rendering never mix PVC and aluminum rules.
+ */
+data class MaterialProfileSystem(
+  val family: MaterialFamily,
+  val code: String,
+  val titlePersian: String,
+  val faceWidthMm: Int = 60,
+  val mullionFaceMm: Int = 75,
+  val sashFaceMm: Int = 72,
+  val maxWidthMm: Int = 3200,
+  val maxHeightMm: Int = 2600,
+  val reinforcementNote: String = ""
+) {
+  val displayName: String get() = "$code — $titlePersian"
+}
+
+object MaterialCatalog {
+  val systems: List<MaterialProfileSystem> = listOf(
+    MaterialProfileSystem(
+      MaterialFamily.UPVC, "Wintech 6000", "وینتک ۶۰۰۰ (۵ کانال)", 60, 75, 72, 2400, 2200, "با تقویت گالوانیزه فولادی"
+    ),
+    MaterialProfileSystem(
+      MaterialFamily.UPVC, "Veka Softline 70", "وِکا سافت‌لاین ۷۰", 68, 82, 80, 2600, 2400, "عایق حرارتی بالاتر، تقویت فولادی"
+    ),
+    MaterialProfileSystem(
+      MaterialFamily.UPVC, "Rehau Brillant", "روهاو بریلانت", 70, 82, 80, 2600, 2400, "سه‌جداره با تقویت فولادی"
+    ),
+    MaterialProfileSystem(
+      MaterialFamily.UPVC, "Salamander BluEvolution", "سالاماندر بلواولوشن ۸۲", 82, 90, 86, 2800, 2500, "حداکثر بهینه‌سازی انرژی"
+    ),
+    MaterialProfileSystem(
+      MaterialFamily.ALUMINUM, "Alu 50 Normal", "آلومینیوم ۵۰ نرمال (بدون ترمال‌بریک)", 50, 60, 55, 3200, 3000, "بدون تقویت گالوانیزه — فوم/نوار عایق"
+    ),
+    MaterialProfileSystem(
+      MaterialFamily.ALUMINUM, "Akpa Thermal", "آکپا ترمال‌بریک", 60, 70, 65, 3400, 3200, "پل حرارتی پلی‌آمید ۲۴ میلی‌متری"
+    ),
+    MaterialProfileSystem(
+      MaterialFamily.ALUMINUM, "Technal Soleal", "تکنال سولئال", 56, 68, 62, 3400, 3200, "پروفیل سیستمی اروپایی"
+    ),
+    MaterialProfileSystem(
+      MaterialFamily.ALUMINUM, "Alumil Smartia", "آلومیل اسمارتیا", 58, 70, 64, 3400, 3200, "مقاطع چندمحفظه‌ای"
+    )
+  )
+
+  fun forFamily(family: MaterialFamily): List<MaterialProfileSystem> = systems.filter { it.family == family }
+
+  fun defaultFor(family: MaterialFamily): MaterialProfileSystem = forFamily(family).first()
+
+  fun find(code: String): MaterialProfileSystem? = systems.firstOrNull { it.code == code }
+
+  fun familyTitle(family: MaterialFamily): String = when (family) {
+    MaterialFamily.UPVC -> "پی‌وی‌سی (UPVC)"
+    MaterialFamily.ALUMINUM -> "آلومینیوم"
+  }
+
+  fun shortFamilyTitle(family: MaterialFamily): String = when (family) {
+    MaterialFamily.UPVC -> "PVC"
+    MaterialFamily.ALUMINUM -> "آلومینیوم"
+  }
+
+  /** Openings that make sense per material; aluminum sliding systems are the workshop default. */
+  fun recommendedOpenings(family: MaterialFamily): List<OpeningType> = when (family) {
+    MaterialFamily.UPVC -> OpeningType.entries
+    MaterialFamily.ALUMINUM -> listOf(
+      OpeningType.FIXED,
+      OpeningType.CASEMENT_LEFT,
+      OpeningType.CASEMENT_RIGHT,
+      OpeningType.DOUBLE_CASEMENT,
+      OpeningType.SLIDING_LEFT,
+      OpeningType.SLIDING_RIGHT,
+      OpeningType.TOP_HUNG,
+      OpeningType.TILT
+    )
+  }
+
+  fun glazings(family: MaterialFamily): List<GlazingType> = when (family) {
+    MaterialFamily.UPVC -> GlazingType.entries
+    MaterialFamily.ALUMINUM -> listOf(
+      GlazingType.SINGLE,
+      GlazingType.DOUBLE_STANDARD,
+      GlazingType.DOUBLE_THICK,
+      GlazingType.TRIPLE
+    )
+  }
+}
+
 data class PanelConfig(
   val id: String,
   val openingType: OpeningType = OpeningType.FIXED,
@@ -112,6 +200,8 @@ data class WindowDesign(
   val windowShape: WindowShape = WindowShape.RECTANGLE,
   val archHeightMm: Int = 300,
   val profileSystem: String = "Wintech 6000",
+  val profileFaceWidthMm: Int = 60,
+  val hasThermalBreak: Boolean = true,
   val frameFinish: FrameFinish = FrameFinish.WHITE,
   val sashFinish: FrameFinish = FrameFinish.WHITE, // Distinct sash color allowed!
   val outerGlassTint: GlassTint = GlassTint.CLEAR,
